@@ -2,12 +2,13 @@ import os.path
 from dataclasses import dataclass
 from typing import Optional
 
-from schomeless.schema import ChapterRequest
+from schomeless.schema import ChapterRequest, CatalogueRequest
 from schomeless.utils import Registerable
 
 __all__ = [
     'RequestApi',
     'UrlChapterRequest',
+    'UrlCatalogueRequest'
 ]
 
 BASE_DIR = os.path.dirname(__file__)
@@ -53,3 +54,8 @@ class RequestApi(metaclass=Registerable):
 class UrlChapterRequest(ChapterRequest):
     url: str
     title: Optional[str] = None
+
+
+@dataclass
+class UrlCatalogueRequest(CatalogueRequest):
+    url: str
