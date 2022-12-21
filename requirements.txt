@@ -1,0 +1,6 @@
+asyncio
+aiohttp
+requests
+pyquery
+pyperclip
+selenium
