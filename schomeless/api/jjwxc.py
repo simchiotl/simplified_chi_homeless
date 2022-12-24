@@ -13,8 +13,6 @@ from schomeless.utils import RequestsTool, EnumExtension
 
 __all__ = [
     'JjwxcApi',
-    'JjwxcChapterRequest',
-    'JjwxcCatalogueRequest',
     'get_jjwxc_cookies',
     'add_jjwxc_cookies',
     'ReloginSettings'
@@ -78,23 +76,6 @@ def get_jjwxc_cookies(relogin_settings=ReloginSettings.NONE):
     return info.get('cookies', None)
 
 
-@dataclass
-class JjwxcChapterRequest(ChapterRequest):
-    novel_id: int
-    chapter_id: int
-    is_vip: bool
-    title: Optional[str] = None
-
-    @property
-    def web_suffix(self):
-        return '_vip' if self.is_vip else ''
-
-
-@dataclass
-class JjwxcCatalogueRequest(CatalogueRequest):
-    novel_id: int
-
-
 @RequestApi.register(namespace)
 class JjwxcApi(RequestApi):
     CATALOGUE_WEB_API = "https://www.jjwxc.net/onebook.php?novelid={req.novel_id}"
@@ -103,6 +84,21 @@ class JjwxcApi(RequestApi):
     CHAPTER_APP_API = "https://app.jjwxc.net/androidapi/chapterContent?novelId={req.novel_id}&chapterId={req.chapter_id}"
     WEB_ENCODING = 'gb18030'
     APP_ENCODING = 'ascii'
+
+    @dataclass
+    class ChapterRequest(ChapterRequest):
+        novel_id: int
+        chapter_id: int
+        is_vip: bool
+        title: Optional[str] = None
+
+        @property
+        def web_suffix(self):
+            return '_vip' if self.is_vip else ''
+
+    @dataclass
+    class CatalogueRequest(CatalogueRequest):
+        novel_id: int
 
     def __init__(self):
         super().__init__()
@@ -114,7 +110,7 @@ class JjwxcApi(RequestApi):
     @staticmethod
     def _parse_request_from_chapter_url(url):
         args = RequestsTool.parse_query(url)
-        return JjwxcChapterRequest(True, int(args['novelid']), int(args['chapterid']), 'vip' in url)
+        return JjwxcApi.ChapterRequest(True, int(args['novelid']), int(args['chapterid']), 'vip' in url)
 
     def _preprocess_chapter_web(self, req):
         assert not req.is_vip, VIP_ERROR_WEB
@@ -156,7 +152,7 @@ class JjwxcApi(RequestApi):
     def _parse_chapter_app(req, url, item):
         title = item['chapterName']
         content = '\n'.join([l.strip() for l in item['content'].split('\n')])
-        next = JjwxcChapterRequest(req.is_first, req.novel_id, req.chapter_id + 1, req.is_vip)
+        next = JjwxcApi.ChapterRequest(req.is_first, req.novel_id, req.chapter_id + 1, req.is_vip)
         return Chapter(title, content), next
 
     def get_chapter_app(self, req):
@@ -170,10 +166,10 @@ class JjwxcApi(RequestApi):
         """
 
         Args:
-            req (UrlChapterRequest, or JjwxcChapterRequest):
+            req (UrlChapterRequest, or JjwxcApi.ChapterRequest):
 
         Returns:
-            2-tuple: ``(Chapter, JjwxcChapterRequest=None)``. If ``JjwxcChapterRequest`` is None, no next chapter.
+            2-tuple: ``(Chapter, JjwxcApi.ChapterRequest=None)``. If ``JjwxcApi.ChapterRequest`` is None, no next chapter.
         """
         if isinstance(req, UrlChapterRequest):
             req = JjwxcApi._parse_request_from_chapter_url(req.url)
@@ -201,10 +197,10 @@ class JjwxcApi(RequestApi):
 
         Args:
             session (aiohttp.ClientSession):
-            req (UrlChapterRequest, or JjwxcChapterRequest):
+            req (UrlChapterRequest, or JjwxcApi.ChapterRequest):
 
         Returns:
-            2-tuple: ``(Chapter, JjwxcChapterRequest=None)``. If ``JjwxcChapterRequest`` is None, no next chapter.
+            2-tuple: ``(Chapter, JjwxcApi.ChapterRequest=None)``. If ``JjwxcApi.ChapterRequest`` is None, no next chapter.
         """
         if isinstance(req, UrlChapterRequest):
             req = JjwxcApi._parse_request_from_chapter_url(req.url)
@@ -224,10 +220,10 @@ class JjwxcApi(RequestApi):
             req (UrlCatalogueRequest):
 
         Returns:
-            JjwxcCatalogueRequest
+            JjwxcApi.CatalogueRequest
         """
         try:
-            return JjwxcCatalogueRequest(novel_id=int(RequestsTool.parse_query(req.url)['novelid']))
+            return JjwxcApi.CatalogueRequest(novel_id=int(RequestsTool.parse_query(req.url)['novelid']))
         except Exception as e:
             raise ValueError(f'Invalid JJWXC catalogue URL: `{req.url}`')
 
@@ -249,17 +245,17 @@ class JjwxcApi(RequestApi):
         res = RequestsTool.request_and_json(catalogue, encoding=JjwxcApi.APP_ENCODING,
                                             request_kwargs=dict(headers=self.headers))
         items = res.get('chapterlist', [])
-        return [JjwxcChapterRequest(True, int(item['novelid']), int(item['chapterid']), bool(item['isvip']),
+        return [JjwxcApi.ChapterRequest(True, int(item['novelid']), int(item['chapterid']), bool(item['isvip']),
                                     item['chaptername']) for item in items]
 
     def get_chapter_list(self, req):
         """
 
         Args:
-            req (UrlCatalogueRequest, or JjwxcCatalogueRequest):
+            req (UrlCatalogueRequest, or JjwxcApi.CatalogueRequest):
 
         Returns:
-            list[JjwxcChapterRequest]
+            list[JjwxcApi.ChapterRequest]
         """
         if isinstance(req, UrlCatalogueRequest):
             req = JjwxcApi._catalogue_url_to_request(req)

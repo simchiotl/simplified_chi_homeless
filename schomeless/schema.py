@@ -40,7 +40,7 @@ class Chapter(DataClassExtension):
             L = len(self.content)
             if L < MAYBE_ERROR_THRESHOLD:
                 logger.warning(f"Maybe invalid chapter:\nTitle: {self.title}, Content: {self.content}")
-            fobj.write(self.content)
+            fobj.write(self.content.strip())
 
 
 @dataclass
@@ -71,7 +71,7 @@ class Book(DataClassExtension):
                 if L < MAYBE_ERROR_THRESHOLD:
                     logger.warning(f"Maybe invalid chapter:\nTitle: {title}, Content: {chapter.content}")
                 fobj.write(f"{title}\n\n")
-                fobj.write(chapter.content)
+                fobj.write(chapter.content.strip())
                 fobj.write('\n\n\n')
 
     @staticmethod
