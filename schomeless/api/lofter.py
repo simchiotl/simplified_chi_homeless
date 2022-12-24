@@ -166,6 +166,7 @@ class LofterApi(RequestApi):
         res = await self.send_api_request_async(session, LofterApi.POST_API, self.get_post_payload(req))
         return self.get_post_postprocess(res), None
 
+    # ====================== Get chapter list ===========================
     def get_collection(self, req):
         """
 

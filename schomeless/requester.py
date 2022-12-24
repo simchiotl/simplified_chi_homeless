@@ -86,6 +86,27 @@ class MultiPageRequester(BookRequester):
         chapter.content += page.content
         return chapter
 
+    @staticmethod
+    def get_chapter_sync(api, req, add_enter=False):
+        chapter = None
+        try:
+            while True:
+                page, req = api.get_chapter(req)
+                chapter = MultiPageRequester.reduce_page(chapter, page, add_enter)
+                if req is None or req.is_first:
+                    break
+        except Exception as e:
+            traceback.print_exc()
+        return chapter, req
+
+    @staticmethod
+    def append_chapter(chapters, chapter):
+        if chapter is not None:
+            chapter.id = len(chapters)
+            chapters.append(chapter)
+            logger.info(f"Chapter {chapter.id + 1}: {chapter.title}")
+        return chapters
+
 
 @BookRequester.register('ITER')
 class IterativeRequester(MultiPageRequester):
@@ -100,16 +121,7 @@ class IterativeRequester(MultiPageRequester):
         Returns:
             2-tuple: ``(Chapter, ChapterRequest)``
         """
-        chapter = None
-        try:
-            while True:
-                page, req = self.api.get_chapter(req)
-                chapter = MultiPageRequester.reduce_page(chapter, page)
-                if req is None or req.is_first:
-                    break
-        except Exception as e:
-            traceback.print_exc()
-        return chapter, req
+        return MultiPageRequester.get_chapter_sync(self.api, req, self.add_enter)
 
     def run_internal(self, req):
         """
@@ -123,22 +135,21 @@ class IterativeRequester(MultiPageRequester):
         chapters = []
         while req is not None:
             chap, req = self.get_chapter(req)
-            if chap is not None:
-                chap.id = len(chapters)
-                chapters.append(chap)
-                logger.info(f"Chapter {chap.id + 1}: {chap.title}")
+            chapters = MultiPageRequester.append_chapter(chapters, chap)
         return chapters
 
 
-@BookRequester.register('ASYNC')
+@BookRequester.register('CATALOGUE')
 class AsyncRequester(MultiPageRequester):
     """Query book chapters asynchronously"""
 
-    async def get_chapter(self, session, req, index):
+    async def get_page(self, session, req, index):
         """
 
         Args:
+            session (aiohttp.ClientSession):
             req (ChapterRequest):
+            index (int): chapter index
 
         Returns:
             2-tuple: ``(Chapter, ChapterRequest)``
@@ -174,28 +185,10 @@ class AsyncRequester(MultiPageRequester):
         tasks = []
         async with aiohttp.ClientSession(headers=headers) as session:
             for i, req in reqs.items():
-                tasks.append(asyncio.create_task(self.get_chapter(session, req, i)))
+                tasks.append(asyncio.create_task(self.get_page(session, req, i)))
             return await asyncio.gather(*tasks)
 
-    def run_internal(self, catalogue, *, retry_count=20, chapter_range=None, headers=None):
-        """
-
-        Args:
-            catalogue (CatalogueRequest):
-            retry_count (int):
-            chapter_range (list[int], optional): id starts from 0
-            headers (dict, optional):
-
-        Returns:
-            list[Chapter]
-        """
-        reqs = self.api.get_chapter_list(catalogue)
-        n = len(reqs)
-        if chapter_range is None:
-            chapter_range = range(n)
-        chapter_range = set(chapter_range)
-        reqs = [r for i, r in enumerate(reqs) if i in chapter_range]
-
+    def get_chapters_async(self, reqs, *, retry_count=20, headers=None):
         retry = 0
         total = len(reqs)
         chapters = [Chapter(id=i) for i in range(total)]
@@ -219,3 +212,42 @@ class AsyncRequester(MultiPageRequester):
             last_failed = n_failed
 
         return chapters
+
+    def get_chapters(self, reqs, *, retry_count=20):
+        chapters = []
+        for req in reqs:
+            retry = 0
+            chapter = None
+            while retry < retry_count:
+                try:
+                    chapter = MultiPageRequester.get_chapter_sync(self.api, req, self.add_enter)
+                except Exception as e:
+                    retry += 1
+                else:
+                    break
+            MultiPageRequester.append_chapter(chapters, chapter)
+        return chapters
+
+    def run_internal(self, catalogue, *, retry_count=20, chapter_range=None, headers=None, is_async=True):
+        """
+
+        Args:
+            catalogue (CatalogueRequest):
+            retry_count (int):
+            chapter_range (list[int], optional): id starts from 0
+            headers (dict, optional):
+            is_async (bool, optional): whether to request asynchronously
+
+        Returns:
+            list[Chapter]
+        """
+        reqs = self.api.get_chapter_list(catalogue)
+        n = len(reqs)
+        if chapter_range is None:
+            chapter_range = range(n)
+        chapter_range = set(chapter_range)
+        reqs = [r for i, r in enumerate(reqs) if i in chapter_range]
+
+        if is_async:
+            return self.get_chapters_async(reqs, retry_count=retry_count, headers=headers)
+        return self.get_chapters(reqs, retry_count=retry_count)

@@ -18,6 +18,12 @@ class Chapter(DataClassExtension):
     content: str = ''
     id: Optional[int] = None
 
+    @staticmethod
+    def cleaned_content(text):
+        lines = text.split('\n')
+        lines = [l for l in lines if l]
+        return '\n\n'.join(lines)
+
     def to_txt(self, file_path):
         """
 
