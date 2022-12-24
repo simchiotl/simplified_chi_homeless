@@ -49,12 +49,13 @@ class Book(DataClassExtension):
     preface: str = ''
     name: str = ''
     author: str = ''
+    start_chapter: int = 1
 
     def __post_init__(self):
         if self.chapters is None:
             self.chapters = []
 
-    def to_txt(self, file_path, start_chapter=1):
+    def to_txt(self, file_path):
         """
 
         Args:
@@ -65,7 +66,7 @@ class Book(DataClassExtension):
             if self.preface:
                 fobj.write(self.preface + "\n\n")
             for chapter in self.chapters:
-                title = f"第{start_chapter + chapter.id}章 {chapter.title}"
+                title = f"第{self.start_chapter + chapter.id}章 {chapter.title}"
                 L = len(chapter.content)
                 if L < MAYBE_ERROR_THRESHOLD:
                     logger.warning(f"Maybe invalid chapter:\nTitle: {title}, Content: {chapter.content}")
@@ -80,7 +81,8 @@ class Book(DataClassExtension):
         with open(file_path, 'r') as fobj:
             for line in fobj:
                 words = line.split(' ', maxsplit=1)
-                if len(words) > 1 and words[0].startswith('第') and words[0].endswith('章') and words[0][1:-1].isdigit():
+                if len(words) > 1 and words[0].startswith('第') and words[0].endswith('章') and words[0][
+                                                                                                1:-1].isdigit():
                     if chapter:
                         chapter.title = chapter.title.strip()
                         chapter.content = chapter.content.strip()
@@ -92,6 +94,10 @@ class Book(DataClassExtension):
                     book.preface += line
         if chapter.title:
             book.chapters.append(chapter)
+        if len(book.chapters):
+            book.start_chapter = book.chapters[0].id
+            for chap in book.chapters:
+                chap.id -= book.start_chapter
         return book
 
     @staticmethod

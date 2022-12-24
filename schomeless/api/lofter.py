@@ -13,10 +13,6 @@ from schomeless.utils import RequestsTool, EnumExtension, FileSysTool
 
 __all__ = [
     'LofterApi',
-    'AppApiChapterRequest',
-    'AppApiCollectionCatalogue',
-    'AppApiBlogCatalogue',
-    'AppApiSearchCatalogue'
 ]
 
 BASE_DIR = os.path.dirname(__file__)
@@ -42,36 +38,6 @@ class LofterMediaType(EnumExtension):
     TEXT = 1
 
 
-@dataclass
-class AppApiChapterRequest(ChapterRequest):
-    """The Chapter request spec for APP API"""
-    blog_id: int
-    post_id: int
-    title: Optional[str] = None
-
-
-@dataclass
-class AppApiCollectionCatalogue(CatalogueRequest):
-    """Get chapter list in a collection"""
-    collection_id: int
-
-
-@dataclass
-class AppApiBlogCatalogue(CatalogueRequest):
-    """get chapter list from a blog"""
-    blog_domain: Optional[str] = None
-    blog_id: Optional[int] = None
-    post_per_page: int = 25
-
-
-@dataclass
-class AppApiSearchCatalogue(CatalogueRequest):
-    """get chapter list from a blog"""
-    keyword: str
-    blog_domain: Optional[str] = None
-    blog_id: Optional[int] = None
-
-
 @RequestApi.register(namespace)
 class LofterApi(RequestApi):
     encoding = 'utf-8'
@@ -79,6 +45,32 @@ class LofterApi(RequestApi):
     COLLECTION_API = "https://api.lofter.com/v1.1/postCollection.api?product=lofter-iphone-7.2.8"
     BLOG_API = 'https://api.lofter.com/v2.0/blogHomePage.api?product=lofter-iphone-7.2.8'
     SEARCH_API = 'https://{req.blog_domain}/search?q={req.keyword}&page={page_id}'
+
+    @dataclass
+    class AppApiChapterRequest(ChapterRequest):
+        """The Chapter request spec for APP API"""
+        blog_id: int
+        post_id: int
+        title: Optional[str] = None
+
+    @dataclass
+    class AppApiCollectionCatalogue(CatalogueRequest):
+        """Get chapter list in a collection"""
+        collection_id: int
+
+    @dataclass
+    class AppApiBlogCatalogue(CatalogueRequest):
+        """get chapter list from a blog"""
+        blog_domain: Optional[str] = None
+        blog_id: Optional[int] = None
+        post_per_page: int = 25
+
+    @dataclass
+    class AppApiSearchCatalogue(CatalogueRequest):
+        """get chapter list from a blog"""
+        keyword: str
+        blog_domain: Optional[str] = None
+        blog_id: Optional[int] = None
 
     def __init__(self, is_ocr=False):
         """
@@ -142,7 +134,7 @@ class LofterApi(RequestApi):
         d = pq(html + "</html>")
         url = d('iframe#control_frame').attr('src')
         info = RequestsTool.parse_query(url)
-        return AppApiChapterRequest(True, int(info['blogId']), int(info['postId']))
+        return LofterApi.AppApiChapterRequest(True, int(info['blogId']), int(info['postId']))
 
     def _chapter_url_spec_to_app_spec(self, url_req):
         """
@@ -181,21 +173,23 @@ class LofterApi(RequestApi):
         d = pq(post['content'])
         imgs = d('img')
         n = len(imgs)
-        if n > 0 and self.is_ocr:
-            ocr = _OCR.get_ocr()
-            for i in range(n):
-                img = imgs.eq(i)
-                url = img.attr('src')
-                filepath = temp_path.format(filename=f"{title}_img{i}{FileSysTool.File.parse(url).extension}")
-                r = requests.get(url, stream=True)
-                r.raise_for_status()
-                with open(filepath, 'wb') as f:
-                    r.raw.decode_content = True
-                    shutil.copyfileobj(r.raw, f)
-                out = ocr.ocr(filepath)
-                text = '<br>'.join([x['text'] for x in out])
-                img.replace_with(f"<p>{text}</p>")
-                FileSysTool.delete_path(filepath)
+        if n > 0:
+            logger.warning(f"Chapter {title}: with IMG")
+            if self.is_ocr:
+                ocr = _OCR.get_ocr()
+                for i in range(n):
+                    img = imgs.eq(i)
+                    url = img.attr('src')
+                    filepath = temp_path.format(filename=f"{title}_img{i}{FileSysTool.File.parse(url).extension}")
+                    r = requests.get(url, stream=True)
+                    r.raise_for_status()
+                    with open(filepath, 'wb') as f:
+                        r.raw.decode_content = True
+                        shutil.copyfileobj(r.raw, f)
+                    out = ocr.ocr(filepath)
+                    text = '<br>'.join([x['text'] for x in out])
+                    img.replace_with(f"<p>{text}</p>")
+                    FileSysTool.delete_path(filepath)
         return Chapter(title=title, content=d.text().strip())
 
     def get_chapter(self, req):
@@ -233,18 +227,18 @@ class LofterApi(RequestApi):
         query = RequestsTool.parse_query(url)
         collection_id = query.get('collectionId', None)
         if collection_id is not None:
-            return AppApiCollectionCatalogue(collection_id)
+            return LofterApi.AppApiCollectionCatalogue(collection_id)
         pure_url = url.split('?', maxsplit=1)[0]
         if pure_url.endswith('search') and 'q' in query:
-            return AppApiSearchCatalogue(keyword=query['q'], blog_domain=RequestsTool.get_domain_name(url))
-        return AppApiBlogCatalogue(blog_domain=RequestsTool.get_domain_name(url))
+            return LofterApi.AppApiSearchCatalogue(keyword=query['q'], blog_domain=RequestsTool.get_domain_name(url))
+        return LofterApi.AppApiBlogCatalogue(blog_domain=RequestsTool.get_domain_name(url))
 
     # ====================== Get chapter list ===========================
     def get_collection(self, req):
         """
 
         Args:
-            req (AppApiCollectionCatalogue):
+            req (LofterApi.AppApiCollectionCatalogue):
 
         Returns:
             list[ChapterRequest]
@@ -261,7 +255,7 @@ class LofterApi(RequestApi):
         payload['limit'] = total
         res = self.send_api_request(LofterApi.COLLECTION_API, payload)
         items = [item['post'] for item in res['items']]
-        return [AppApiChapterRequest(True, obj['blogId'], obj['id'], obj['title']) for obj in items]
+        return [LofterApi.AppApiChapterRequest(True, obj['blogId'], obj['id'], obj['title']) for obj in items]
 
     def get_blog(self, req):
         """
@@ -290,7 +284,7 @@ class LofterApi(RequestApi):
             res = self.send_api_request(LofterApi.BLOG_API, payload)
             items = [item['post'] for item in res['posts']]
             add = len(items)
-            chapters += [AppApiChapterRequest(True, obj['blogId'], obj['id'], obj['title']) for obj in items]
+            chapters += [LofterApi.AppApiChapterRequest(True, obj['blogId'], obj['id'], obj['title']) for obj in items]
             if add < limit:
                 break
             payload['offset'] += add
@@ -347,10 +341,10 @@ class LofterApi(RequestApi):
         """
         if isinstance(catalogue, UrlCatalogueRequest):
             catalogue = self._url_to_request(catalogue.url)
-        if isinstance(catalogue, AppApiBlogCatalogue):
+        if isinstance(catalogue, LofterApi.AppApiBlogCatalogue):
             return self.get_blog(catalogue)
-        if isinstance(catalogue, AppApiCollectionCatalogue):
+        if isinstance(catalogue, LofterApi.AppApiCollectionCatalogue):
             return self.get_collection(catalogue)
-        if isinstance(catalogue, AppApiSearchCatalogue):
+        if isinstance(catalogue, LofterApi.AppApiSearchCatalogue):
             return self.get_search(catalogue)
         assert False, f"Unsupported Catalogue Request: {catalogue}"
