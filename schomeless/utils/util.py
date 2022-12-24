@@ -62,6 +62,10 @@ class RequestsTool:
         return url + '?' + "&".join(qargs)
 
     @staticmethod
+    def get_domain_name(url):
+        return urlparse(url).netloc
+
+    @staticmethod
     def get_host(url):
         return '{uri.scheme}://{uri.netloc}'.format(uri=urlparse(url))
 

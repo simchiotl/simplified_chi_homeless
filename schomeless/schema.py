@@ -11,6 +11,11 @@ __all__ = [
     'CatalogueRequest'
 ]
 
+logger = logging.getLogger('SCHEMA')
+
+MAYBE_ERROR_THRESHOLD = 500
+"""少于500字的视作可能的缺章"""
+
 
 @dataclass
 class Chapter(DataClassExtension):
@@ -32,6 +37,9 @@ class Chapter(DataClassExtension):
         """
         with open(file_path, 'w') as fobj:
             fobj.write(self.title + "\n\n")
+            L = len(self.content)
+            if L < MAYBE_ERROR_THRESHOLD:
+                logger.warning(f"Maybe invalid chapter:\nTitle: {self.title}, Content: {self.content}")
             fobj.write(self.content)
 
 
@@ -57,7 +65,11 @@ class Book(DataClassExtension):
             if self.preface:
                 fobj.write(self.preface + "\n\n")
             for chapter in self.chapters:
-                fobj.write(f"第{start_chapter + chapter.id}章 {chapter.title}\n\n")
+                title = f"第{start_chapter + chapter.id}章 {chapter.title}"
+                L = len(chapter.content)
+                if L < MAYBE_ERROR_THRESHOLD:
+                    logger.warning(f"Maybe invalid chapter:\nTitle: {title}, Content: {chapter.content}")
+                fobj.write(f"{title}\n\n")
                 fobj.write(chapter.content)
                 fobj.write('\n\n\n')
 
@@ -68,7 +80,7 @@ class Book(DataClassExtension):
         with open(file_path, 'r') as fobj:
             for line in fobj:
                 words = line.split(' ', maxsplit=1)
-                if len(words) > 1 and words[0].startswith('第') and words[0].endswith('章'):
+                if len(words) > 1 and words[0].startswith('第') and words[0].endswith('章') and words[0][1:-1].isdigit():
                     if chapter:
                         chapter.title = chapter.title.strip()
                         chapter.content = chapter.content.strip()

@@ -1,24 +1,41 @@
 import logging
 import os.path
+import shutil
 from dataclasses import dataclass
 from typing import Optional
 
+import requests
 from pyquery import PyQuery as pq
 
 from schomeless.api.base import RequestApi, UrlChapterRequest, UrlCatalogueRequest
 from schomeless.schema import Chapter, CatalogueRequest, ChapterRequest
-from schomeless.utils import RequestsTool, EnumExtension
+from schomeless.utils import RequestsTool, EnumExtension, FileSysTool
 
 __all__ = [
     'LofterApi',
     'AppApiChapterRequest',
     'AppApiCollectionCatalogue',
-    'AppApiBlogCatalogue'
+    'AppApiBlogCatalogue',
+    'AppApiSearchCatalogue'
 ]
 
 BASE_DIR = os.path.dirname(__file__)
 logger = logging.getLogger('API')
 namespace = 'LOFTER'
+temp_path = os.path.join(BASE_DIR, '../../temp/{filename}')
+
+
+class _OCR:
+    ocr = None
+
+    @classmethod
+    def get_ocr(cls):
+        if cls.ocr is None:
+            old_logger = logger.level
+            from cnocr import CnOcr
+            logger.setLevel(old_logger)
+            cls.ocr = CnOcr(det_model_name='naive_det')
+        return cls.ocr
 
 
 class LofterMediaType(EnumExtension):
@@ -47,18 +64,33 @@ class AppApiBlogCatalogue(CatalogueRequest):
     post_per_page: int = 25
 
 
+@dataclass
+class AppApiSearchCatalogue(CatalogueRequest):
+    """get chapter list from a blog"""
+    keyword: str
+    blog_domain: Optional[str] = None
+    blog_id: Optional[int] = None
+
+
 @RequestApi.register(namespace)
 class LofterApi(RequestApi):
     encoding = 'utf-8'
     POST_API = "https://api.lofter.com/oldapi/post/detail.api?product=lofter-iphone-7.2.8"
     COLLECTION_API = "https://api.lofter.com/v1.1/postCollection.api?product=lofter-iphone-7.2.8"
     BLOG_API = 'https://api.lofter.com/v2.0/blogHomePage.api?product=lofter-iphone-7.2.8'
+    SEARCH_API = 'https://{req.blog_domain}/search?q={req.keyword}&page={page_id}'
 
-    def __init__(self):
+    def __init__(self, is_ocr=False):
+        """
+
+        Args:
+            is_ocr (bool, optional): whether to use OCR to recognize images.
+        """
         super().__init__()
         self.headers = {
             "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
         }
+        self.is_ocr = is_ocr
 
     def send_api_request(self, API, payload):
         obj = RequestsTool.request_and_json(
@@ -84,6 +116,17 @@ class LofterApi(RequestApi):
         }
         res = self.send_api_request(LofterApi.BLOG_API, payload)
         return int(res['blogsetting']['blogId'])
+
+    def get_blog_domain_name_from_id(self, blog_id):
+        payload = {
+            'targetblogid': blog_id,
+            'checkpwd': '1',
+            'method': 'getBlogInfoDetail',
+            'needgetpoststat': '0',
+            'returnData': '1'
+        }
+        res = self.send_api_request(LofterApi.BLOG_API, payload)
+        return res['blogLink']
 
     @staticmethod
     def _chapter_app_spec_from_html(html):
@@ -134,7 +177,26 @@ class LofterApi(RequestApi):
 
     def get_post_postprocess(self, res):
         post = res['posts'][0]['post']
-        return Chapter(title=post['title'], content=pq(post['content']).text().strip())
+        title = post['title']
+        d = pq(post['content'])
+        imgs = d('img')
+        n = len(imgs)
+        if n > 0 and self.is_ocr:
+            ocr = _OCR.get_ocr()
+            for i in range(n):
+                img = imgs.eq(i)
+                url = img.attr('src')
+                filepath = temp_path.format(filename=f"{title}_img{i}{FileSysTool.File.parse(url).extension}")
+                r = requests.get(url, stream=True)
+                r.raise_for_status()
+                with open(filepath, 'wb') as f:
+                    r.raw.decode_content = True
+                    shutil.copyfileobj(r.raw, f)
+                out = ocr.ocr(filepath)
+                text = '<br>'.join([x['text'] for x in out])
+                img.replace_with(f"<p>{text}</p>")
+                FileSysTool.delete_path(filepath)
+        return Chapter(title=title, content=d.text().strip())
 
     def get_chapter(self, req):
         """
@@ -165,6 +227,17 @@ class LofterApi(RequestApi):
             req = await self._chapter_url_spec_to_app_spec_async(session, req)
         res = await self.send_api_request_async(session, LofterApi.POST_API, self.get_post_payload(req))
         return self.get_post_postprocess(res), None
+
+    # ====================== Tell URL type ===========================
+    def _url_to_request(self, url):
+        query = RequestsTool.parse_query(url)
+        collection_id = query.get('collectionId', None)
+        if collection_id is not None:
+            return AppApiCollectionCatalogue(collection_id)
+        pure_url = url.split('?', maxsplit=1)[0]
+        if pure_url.endswith('search') and 'q' in query:
+            return AppApiSearchCatalogue(keyword=query['q'], blog_domain=RequestsTool.get_domain_name(url))
+        return AppApiBlogCatalogue(blog_domain=RequestsTool.get_domain_name(url))
 
     # ====================== Get chapter list ===========================
     def get_collection(self, req):
@@ -223,12 +296,46 @@ class LofterApi(RequestApi):
             payload['offset'] += add
         return chapters
 
+    def get_search(self, req):
+        """
+
+        Args:
+            req (AppApiSearchCatalogue):
+
+        Returns:
+            list[ChapterRequest]
+        """
+
+        def valid_url(url):
+            if url:
+                key = f"{RequestsTool.get_domain_name(url)}/post"
+                return key in url
+            return False
+
+        page_id = 1
+        if req.blog_domain is None:
+            req.blog_domain = self.get_blog_domain_name_from_id(req.blog_id)
+        reqs = []
+        while True:
+            url = RequestsTool.quote(LofterApi.SEARCH_API.format(req=req, page_id=page_id))
+            d = RequestsTool.request_and_pyquery(url)
+            urls = [(item.attrib.get('href', ''), item.text) for item in d('h2 a')]
+            page_reqs = [UrlChapterRequest(True, url, txt) for url, txt in urls if valid_url(url)]
+            reqs += page_reqs
+            add = len(page_reqs)
+            if add == 0:
+                break
+            page_id += 1
+        return reqs[::-1]
+
     def get_chapter_list(self, catalogue):
         """Can provide either AppApiCollectionCatalogue, AppApiBlogCatalogue, or UrlCatalogueRequest.
 
         If URL is used:
         * For collection, like: ``https://www.lofter.com/front/blog/collection/share?collectionId=xxxxx``. \
           Or any URL with ``collectionId`` in query.
+        * For search, like: ``https://xxxx.lofter.com/search?q={keyword}&page=xx``. \
+          Or any URL route to ``search``.
         * For blog, like: ``https://xxxx.lofter.com/``. Or any URL not meeting the collection pattern. \
                           Would try to parse the domain name.
 
@@ -239,16 +346,11 @@ class LofterApi(RequestApi):
             list[ChapterRequest]
         """
         if isinstance(catalogue, UrlCatalogueRequest):
-            query = RequestsTool.parse_query(catalogue.url)
-            collection_id = query.get('collectionId', None)
-            if collection_id is not None:
-                # collection
-                catalogue = AppApiCollectionCatalogue(collection_id)
-            else:
-                # blog
-                pass
+            catalogue = self._url_to_request(catalogue.url)
         if isinstance(catalogue, AppApiBlogCatalogue):
             return self.get_blog(catalogue)
         if isinstance(catalogue, AppApiCollectionCatalogue):
             return self.get_collection(catalogue)
+        if isinstance(catalogue, AppApiSearchCatalogue):
+            return self.get_search(catalogue)
         assert False, f"Unsupported Catalogue Request: {catalogue}"

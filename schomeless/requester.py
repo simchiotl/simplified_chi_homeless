@@ -220,7 +220,7 @@ class AsyncRequester(MultiPageRequester):
             chapter = None
             while retry < retry_count:
                 try:
-                    chapter = MultiPageRequester.get_chapter_sync(self.api, req, self.add_enter)
+                    chapter, _ = MultiPageRequester.get_chapter_sync(self.api, req, self.add_enter)
                 except Exception as e:
                     retry += 1
                 else:
