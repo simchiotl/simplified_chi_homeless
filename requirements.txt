@@ -4,3 +4,4 @@ requests
 pyquery
 pyperclip
 selenium
+wxPython

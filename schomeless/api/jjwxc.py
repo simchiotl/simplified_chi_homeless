@@ -25,7 +25,7 @@ namespace = 'JJWXC'
 
 
 def get_jjwxc_cookies(force_relogin=False):
-    info_path = os.path.join(BASE_DIR, '../../accouts/jjwxc.json')
+    info_path = os.path.join(BASE_DIR, '../../resources/accounts/jjwxc.json')
     with open(info_path, 'r') as fobj:
         info = json.load(fobj)
     if not force_relogin and info.get('cookies', None):

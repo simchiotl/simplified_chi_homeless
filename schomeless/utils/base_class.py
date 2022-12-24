@@ -5,7 +5,8 @@ from inspect import isclass
 __all__ = [
     'Registerable',
     'EnumExtension',
-    'DataClassExtension'
+    'DataClassExtension',
+    'Singleton'
 ]
 
 
@@ -106,3 +107,12 @@ class DataClassExtension:
 
     def __str__(self):
         return str(self.__dict__())
+
+
+class Singleton(type):
+    _instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]

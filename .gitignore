@@ -1,4 +1,4 @@
-accouts
+resources/accounts
 temp
 *-backup.py
 sensitive_tests
