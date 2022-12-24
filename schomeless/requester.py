@@ -73,6 +73,10 @@ class MultiPageRequester(BookRequester):
         Returns:
             Chapter
         """
+        if page is None:
+            return chapter
+        if chapter is None:
+            chapter = Chapter(title=None, content='')
         if chapter.title is None:
             chapter.title = page.title
         else:
@@ -96,7 +100,7 @@ class IterativeRequester(MultiPageRequester):
         Returns:
             2-tuple: ``(Chapter, ChapterRequest)``
         """
-        chapter = Chapter(title=None, content='')
+        chapter = None
         try:
             while True:
                 page, req = self.api.get_chapter(req)
@@ -119,9 +123,10 @@ class IterativeRequester(MultiPageRequester):
         chapters = []
         while req is not None:
             chap, req = self.get_chapter(req)
-            chap.id = len(chapters)
-            chapters.append(chap)
-            logger.info(f"Chapter {chap.id + 1}: {chap.title}")
+            if chap is not None:
+                chap.id = len(chapters)
+                chapters.append(chap)
+                logger.info(f"Chapter {chap.id + 1}: {chap.title}")
         return chapters
 
 
@@ -144,7 +149,7 @@ class AsyncRequester(MultiPageRequester):
             return True, dict(index=index, page=page, next=next)
         except Exception as e:
             import traceback
-            logger.debug(traceback.format_exc())
+            logger.error(traceback.format_exc())
             logger.error(f'Error at {req}')
             return False, index, req
 

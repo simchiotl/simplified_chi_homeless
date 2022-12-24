@@ -138,9 +138,9 @@ class RequestsTool:
 class FileSysTool:
     @dataclass
     class File:
-        dirname: str
-        filename: str
-        extension: str
+        dirname: str = ''
+        filename: str = ''
+        extension: str = ''
 
         @staticmethod
         def parse(filepath):
@@ -151,7 +151,7 @@ class FileSysTool:
     @staticmethod
     def enable_path(path, is_filepath=True):
         """Given a path that need to be written, make sure the directory exists
-    
+
         Args:
             path (str): could either be a file path or a directory path
             is_filepath (bool): indicates whether ``path`` is a file path
@@ -166,7 +166,7 @@ class FileSysTool:
     def delete_path(path):
         """Delete whatever at the path if it exists. If it's a file, remove it and it's index file.
         If it's a directory, remove the whole directory.
-    
+
         Args:
             path (str): the path
         """
