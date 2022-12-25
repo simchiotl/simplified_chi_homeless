@@ -2,55 +2,121 @@ import logging
 import os.path
 
 from pyquery import PyQuery as pq
+from selenium import webdriver
 from selenium.common import NoSuchElementException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 
-from schomeless.api.base import RequestApi, UrlChapterRequest, driver
+from schomeless.api.base import RequestApi, UrlChapterRequest, CookieManager, ReloginSettings
 from schomeless.schema import Chapter
 from schomeless.utils import RequestsTool
 
 __all__ = [
-    'ChongyaApi',
+    'MtslashApi',
 ]
 
 BASE_DIR = os.path.dirname(__file__)
 logger = logging.getLogger('API')
-namespace = 'CHONGYA'
+namespace = 'MTSLASH'
 temp_path = os.path.join(BASE_DIR, '../../temp/{filename}')
 
 
+@CookieManager.register(namespace.lower())
+def add_mtslash_cookies(cookie=None):
+    """
+
+    Args:
+        cookie (str, optional): cookie string like ``"key=name;key2=name2"``. If provided, use it. \
+                                Otherwise, get new cookie by re-login.
+    """
+
+    def can_login(browser):
+        try:
+            browser.find_element(value='wp')
+            return True
+        except NoSuchElementException as e:
+            return False
+
+    def token_exist(browser):
+        cookies = browser.get_cookies()
+        return any(a['name'] == 'ivGn_2132_ulastactivity' for a in cookies)
+
+    info = CookieManager.load_info(namespace.lower())
+    if cookie is None:
+        browser = webdriver.Chrome()
+        browser.get('http://www.mtslash.me/forum.php')
+        WebDriverWait(browser, timeout=100).until(can_login)
+        browser.find_element(by=By.ID, value='ls_username').send_keys(info.get('name', ''))
+        browser.find_element(by=By.ID, value='ls_password').send_keys(info.get('password', ''))
+        browser.find_element(by=By.ID, value='ls_cookietime').click()
+        WebDriverWait(browser, timeout=300).until(token_exist)
+        cookie = ';'.join(f"{a['name']}={a['value']}" for a in browser.get_cookies())
+        browser.quit()
+        logger.info('Login succeeded.')
+    return cookie
+
+
+class Browser:
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.ins = None
+
+    def get_browser(self):
+        if self.ins is None:
+            self.ins = webdriver.Chrome()
+        return self.ins
+
+    def __del__(self):
+        if self.ins is not None:
+            self.ins.quit()
+
+
+driver = Browser()
+
+
 @RequestApi.register(namespace)
-class ChongyaApi(RequestApi):
+class MtslashApi(RequestApi):
     encoding = 'utf-8'
 
     def __init__(self):
-        """
-
-        Args:
-            is_ocr (bool, optional): whether to use OCR to recognize images.
-        """
+        """"""
         super().__init__()
         self.headers = {
-            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
         }
+        self.cookie = CookieManager.get_cookie(namespace.lower(), ReloginSettings.WHEN_NOT_EXIST)
+        self.browser = driver.get_browser()
+        self.browser.get('http://www.mtslash.me/forum.php')
+        cookies = self.cookie.split(';')
+        cookies = [cookie.strip().split('=') for cookie in cookies]
+        for k, v in cookies:
+            self.browser.add_cookie({"name": k, "value": v})
 
     def get_post_postprocess(self, req, url, d):
-        title = d('title').text().strip()
-        content = d('div.content').text().strip()
-        a = d('div.album-article-group:last div.next-article-title a')
+        title = d('#thread_subject').text().strip()
+        posts = d('#postlist div')
+        n = len(posts)
+        content = ''
+        for i in range(n):
+            item = posts.eq(i)
+            id = item.attr('id')
+            if id is not None and id.startswith('post'):
+                context = item('td.t_f')
+                context.remove('i')
+                content += context.text().strip() + "\n"
+        a = d('#pgt a.nxt')
         next = None
         if len(a) > 0:
-            next_title = a.text().strip()
-            next_url = RequestsTool.get_domain_name(url) + a.attr('href')
-            next = UrlChapterRequest(True, next_url, next_title)
+            next_url = os.path.join(RequestsTool.get_dirname(url), a.attr('href'))
+            next = UrlChapterRequest(False, next_url)
         return Chapter(title, content), next
 
     def get_chapter(self, req):
         """
 
         Args:
-            req (UrlChapterRequest): Could be a url like: ``https://m.chongya.com/update/xxxxxx``
+            req (UrlChapterRequest): Could be a url like: ``http://www.mtslash.me/forum.php?mod=viewthread&tid=276956&authorid=190894``
 
         Returns:
             2-tuple: ``(Chapter, None)``. Don't support iterative request when using App's API
@@ -58,15 +124,14 @@ class ChongyaApi(RequestApi):
 
         def chapter_exist(browser):
             try:
-                e = browser.find_element(by=By.CLASS_NAME, value='content')
+                e = browser.find_element(by=By.ID, value='postlist')
                 return True
             except NoSuchElementException:
                 return False
 
-        browser = driver.get_browser()
-        browser.get(req.url)
-        WebDriverWait(browser, timeout=60).until(chapter_exist)
-        d = pq(browser.page_source)
+        self.browser.get(req.url)
+        WebDriverWait(self.browser, timeout=60).until(chapter_exist)
+        d = pq(self.browser.page_source)
         return self.get_post_postprocess(req, req.url, d)
 
     # async def get_chapter_async(self, session, req):

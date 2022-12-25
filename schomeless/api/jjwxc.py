@@ -1,4 +1,3 @@
-import json
 import logging
 import os.path
 from dataclasses import dataclass
@@ -7,33 +6,25 @@ from typing import Optional
 from selenium import webdriver
 from selenium.webdriver.support.wait import WebDriverWait
 
-from schomeless.api.base import RequestApi, UrlCatalogueRequest, UrlChapterRequest
+from schomeless.api.base import RequestApi, UrlCatalogueRequest, UrlChapterRequest, CookieManager
 from schomeless.schema import Chapter, ChapterRequest, CatalogueRequest
-from schomeless.utils import RequestsTool, EnumExtension
+from schomeless.utils import RequestsTool
 
 __all__ = [
     'JjwxcApi',
-    'get_jjwxc_cookies',
     'add_jjwxc_cookies',
-    'ReloginSettings'
 ]
 
 BASE_DIR = os.path.dirname(__file__)
 logger = logging.getLogger('API')
 namespace = 'JJWXC'
-account_path = os.path.join(BASE_DIR, '../../resources/accounts/jjwxc.json')
 
 # CONSTANTS
 VIP_ERROR_WEB = "VIP chapters cannot be requested from Web API!"
-VIP_ERROR_APP = "VIP chapters require valid cookies! Use `add_jjwxc_cookies` to add cookies"
+VIP_ERROR_APP = "VIP chapters require valid cookies! Use `CookieManager.set_cookie(\"jjwxc\")` to add cookies"
 
 
-class ReloginSettings(EnumExtension):
-    NONE = 0
-    WHEN_NOT_EXIST = 1
-    ALWAYS = 2
-
-
+@CookieManager.register(namespace.lower())
 def add_jjwxc_cookies(cookie=None):
     """
 
@@ -46,8 +37,7 @@ def add_jjwxc_cookies(cookie=None):
         cookies = browser.get_cookies()
         return any(a['name'] == 'token' for a in cookies)
 
-    with open(account_path, 'r') as fobj:
-        info = json.load(fobj)
+    info = CookieManager.load_info(namespace.lower())
     if cookie is None:
         browser = webdriver.Chrome()
         browser.get('https://www.jjwxc.net/')
@@ -60,20 +50,7 @@ def add_jjwxc_cookies(cookie=None):
         cookie = ';'.join(f"{a['name']}={a['value']}" for a in browser.get_cookies())
         browser.quit()
         logger.info('Login succeeded.')
-    info['cookies'] = cookie
-    with open(account_path, 'w') as fobj:
-        json.dump(info, fobj, indent=2)
-    return info
-
-
-def get_jjwxc_cookies(relogin_settings=ReloginSettings.NONE):
-    with open(account_path, 'r') as fobj:
-        info = json.load(fobj)
-    cookies = info.get('cookies', None)
-    if relogin_settings == ReloginSettings.ALWAYS or (
-            cookies is None and relogin_settings == ReloginSettings.WHEN_NOT_EXIST):
-        info = add_jjwxc_cookies()
-    return info.get('cookies', None)
+    return cookie
 
 
 @RequestApi.register(namespace)
@@ -105,7 +82,7 @@ class JjwxcApi(RequestApi):
         self.headers = {
             "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
         }
-        self.cookies = get_jjwxc_cookies()
+        self.cookies = CookieManager.get_cookie(namespace.lower())
 
     @staticmethod
     def _parse_request_from_chapter_url(url):
@@ -246,7 +223,7 @@ class JjwxcApi(RequestApi):
                                             request_kwargs=dict(headers=self.headers))
         items = res.get('chapterlist', [])
         return [JjwxcApi.ChapterRequest(True, int(item['novelid']), int(item['chapterid']), bool(item['isvip']),
-                                    item['chaptername']) for item in items]
+                                        item['chaptername']) for item in items]
 
     def get_chapter_list(self, req):
         """
