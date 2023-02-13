@@ -160,9 +160,9 @@ class AsyncRequester(MultiPageRequester):
             return True, dict(index=index, page=page, next=next)
         except Exception as e:
             import traceback
-            logger.error(traceback.format_exc())
-            logger.error(f'Error at {req}')
-            return False, index, req
+            logger.debug(traceback.format_exc())
+            logger.debug(f'Error at {req}')
+            return False, dict(index=index, page=req)
 
     def reduce(self, used, chapters, results):
         n_failed = 0
