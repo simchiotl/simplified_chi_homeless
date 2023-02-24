@@ -28,16 +28,18 @@ class BookRequester(metaclass=Registerable):
         """
         self.api = api
 
-    def run(self, book_properties=None, *args, **kwargs):
+    def run(self, book_props=None, *args, **kwargs):
         """
 
         Args:
-            book_properties (dict, optional): some constant attributes of ``Book``, e.g. preface.
+            book_props (dict or Book, optional): some constant attributes of ``Book``, e.g. preface.
 
         Returns:
             Book
         """
-        book = Book(**book_properties)
+        book = book_props
+        if not isinstance(book, Book):
+            book = Book(**book_props)
         book.chapters = self.run_internal(*args, **kwargs)
         return book
 

@@ -5,13 +5,14 @@ from typing import Optional
 
 from selenium import webdriver
 
-from schomeless.schema import ChapterRequest, CatalogueRequest
+from schomeless.schema import ChapterRequest, CatalogueRequest, BookInfoRequest
 from schomeless.utils import Registerable, EnumExtension
 
 __all__ = [
     'RequestApi',
     'UrlChapterRequest',
     'UrlCatalogueRequest',
+    'UrlBookInfoRequest',
     'ReloginSettings',
     'CookieManager',
     'driver'
@@ -55,6 +56,17 @@ class RequestApi(metaclass=Registerable):
         """
         raise NotImplementedError("`get_chapter_list`")
 
+    def get_book_info(self, book_info_request):
+        """
+
+        Args:
+            book_info_request (BookInfoRequest):
+
+        Returns:
+            Book
+        """
+        raise NotImplementedError("`get_book_info`")
+
 
 @dataclass
 class UrlChapterRequest(ChapterRequest):
@@ -64,6 +76,11 @@ class UrlChapterRequest(ChapterRequest):
 
 @dataclass
 class UrlCatalogueRequest(CatalogueRequest):
+    url: str
+
+
+@dataclass
+class UrlBookInfoRequest(BookInfoRequest):
     url: str
 
 

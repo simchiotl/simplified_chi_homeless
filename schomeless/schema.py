@@ -8,7 +8,8 @@ __all__ = [
     'Book',
     'Chapter',
     'ChapterRequest',
-    'CatalogueRequest'
+    'CatalogueRequest',
+    'BookInfoRequest'
 ]
 
 logger = logging.getLogger('SCHEMA')
@@ -55,7 +56,7 @@ class Book(DataClassExtension):
         if self.chapters is None:
             self.chapters = []
 
-    def to_txt(self, file_path):
+    def to_txt(self, file_path, preface_format="【{book.author}】{book.name}\n\n{book.preface}"):
         """
 
         Args:
@@ -64,7 +65,7 @@ class Book(DataClassExtension):
         """
         with open(file_path, 'w') as fobj:
             if self.preface:
-                fobj.write(self.preface + "\n\n")
+                fobj.write(preface_format.format(book=self) + "\n\n")
             for chapter in self.chapters:
                 title = f"第{self.start_chapter + chapter.id}章 {chapter.title}"
                 L = len(chapter.content)
@@ -161,3 +162,8 @@ class ChapterRequest(DataClassExtension):
 @dataclass
 class CatalogueRequest(DataClassExtension):
     """Abstract class for Catalogue Request Spec"""
+
+
+@dataclass
+class BookInfoRequest(DataClassExtension):
+    """Abstract class for Book information Request Spec"""
