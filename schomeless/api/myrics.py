@@ -77,9 +77,7 @@ class MyRicsApi(RequestApi):
         self.cookies = CookieManager.get_cookie(namespace.lower())
         self.headers = {
             "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
-            # 'cookie': self.cookies + '; django_language=zh-hans',
-            'cookie': '_ga=GA1.1.1510019690.1678023170; csrftoken=eMhf9S1RYyU0QkFn67zLuwFxs0nlir68wV1v9fN81dX9jo05jrbU5BQC6Q1ME89M; sessionid=1xaferx2ng6kairagys2bs61neypkpsg; django_language=zh-hans; _ga_1BD4PC953S=GS1.1.1678023170.1.1.1678030351.0.0.0',
-            # 'x-csrftoken': 'AEB1C2Q7FvTGhUGbuiip95Lzuvgkju6jSNlhCpCoIaWPKY1THCUyKaWE8lULFb9X'
+            'cookie': self.cookies + '; django_language=zh-hans',
         }
 
     @staticmethod
