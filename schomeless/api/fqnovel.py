@@ -21,10 +21,6 @@ BASE_DIR = os.path.dirname(__file__)
 logger = logging.getLogger('API')
 namespace = 'FQNOVEL'
 
-# CONSTANTS
-VIP_ERROR_WEB = "VIP chapters cannot be requested from Web API!"
-VIP_ERROR_APP = "VIP chapters require valid cookies! Use `CookieManager.set_cookie(\"jjwxc\")` to add cookies"
-
 
 @CookieManager.register(namespace.lower())
 def add_fqnovel_cookies(cookie=None):
