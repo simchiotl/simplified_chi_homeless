@@ -1,12 +1,13 @@
 import os.path
 
 from schomeless.api import UrlChapterRequest, OtherApi
-from schomeless.schema import Chapter
+from schomeless.schema import Chapter, Book
 from schomeless.utils import RequestsTool
 
 __all__ = [
     'FeiazwApi',
-    'ZwwxApi'
+    'ZwwxApi',
+    'Wx75Api'
 ]
 
 BASE_DIR = os.path.dirname(__file__)
@@ -77,3 +78,28 @@ class ZwwxApi(OtherApi):
             url = host + item.attrib['href']
             reqs.append(UrlChapterRequest(True, url, ZwwxApi.clean_title(item.text)))
         return reqs
+
+
+class Wx75Api(OtherApi):
+    @staticmethod
+    def clean_book(source, target, name='', author=''):
+        with open(source, 'r') as fobj:
+            text = fobj.read()
+            first, second = text.split("""-------------可爱的分割线---------------
+正文开始，更多好文请访问 75zw.com 
+-------------可爱的分割线---------------""", maxsplit=1)
+            lines = second.strip().split('\n')
+            chapters = []
+            title, content = None, []
+            for line in lines:
+                cline = line.strip()
+                if cline.endswith('75zw.com'):
+                    if title is not None or len(content) > 0:
+                        chapters.append(Chapter(title, '\n'.join(content).strip()))
+                    title = cline.split(' ', maxsplit=1)[0]
+                    content = []
+                elif title is not None:
+                    content.append(cline)
+            preface = "\n".join(first.strip().split('\n')[3:])
+            book = Book(name=name, author=author, preface=preface, chapters=chapters)
+            book.to_txt(target)
