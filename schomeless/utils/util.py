@@ -80,7 +80,7 @@ class RequestsTool:
             request_kwargs = {}
         res = requests.request(method, url, **request_kwargs)
         res.raise_for_status()
-        if res.apparent_encoding.lower() != encoding.lower():
+        if res.apparent_encoding is not None and res.apparent_encoding.lower() != encoding.lower():
             print(f"Maybe should be `{res.apparent_encoding}` encoding. Used it.", file=sys.stderr)
             res.encoding = res.apparent_encoding
         else:

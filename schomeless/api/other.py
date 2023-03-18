@@ -18,6 +18,9 @@ temp_path = os.path.join(BASE_DIR, '../../temp/{filename}')
 class OtherApi(RequestApi):
     encoding = 'utf-8'
 
+    def __init__(self):
+        self.headers = {}
+
     def get_chapter_internal(self, req, d):
         """Get the chapter content
 
@@ -71,5 +74,9 @@ class OtherApi(RequestApi):
         raise NotImplementedError("``get_chapter_requests``")
 
     def get_chapter_list(self, catalog):
-        d = RequestsTool.request_and_pyquery(catalog.url)
+        kwargs = dict(headers=self.headers)
+        d = RequestsTool.request_and_pyquery(
+            catalog.url,
+            request_kwargs=kwargs
+        )
         return self.get_chapter_list_internal(catalog, d)

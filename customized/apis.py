@@ -47,6 +47,7 @@ class FeiazwApi(OtherApi):
 class ZwwxApi(OtherApi):
 
     def __init__(self, spliter):
+        super().__init__()
         self.spliter = spliter
 
     @staticmethod

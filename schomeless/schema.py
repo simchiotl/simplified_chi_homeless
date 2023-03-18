@@ -1,5 +1,7 @@
+import json
 import logging
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from typing import List, Optional
 
 from schomeless.utils import DataClassExtension
@@ -43,6 +45,26 @@ class Chapter(DataClassExtension):
                 logger.warning(f"Maybe invalid chapter:\nTitle: {self.title}, Content: {self.content}")
             fobj.write(self.content.strip())
 
+    @staticmethod
+    def similar_title(t1, t2, threshold=0.8):
+        if len(t1) > len(t2):
+            t1, t2 = t2, t1
+        matches = SequenceMatcher(None, t1, t2).get_matching_blocks()
+        seqs = [t1[m.a: m.a + m.size] for m in matches]
+        ratio = sum(m.size for m in matches) / len(t1)
+        return ratio > threshold
+
+    def maybe_similar(self, chapter, threshold=0.8):
+        return Chapter.similar_title(self.title, chapter.title, threshold)
+
+
+def _default_parse_preface(book):
+    lines = book.preface.split('\n\n', maxsplit=1)
+    first = lines[0].strip()
+    if len(lines) > 1 and first.startswith('【'):
+        book.author, book.name = first[1:].split('】', maxsplit=1)
+        book.preface = lines[-1].strip()
+
 
 @dataclass
 class Book(DataClassExtension):
@@ -63,9 +85,15 @@ class Book(DataClassExtension):
             file_path:
             start_chapter (int): ``chap_id = chap_id + start_chapter``
         """
+        ids = set(chap.id for chap in self.chapters)
+        if None in ids:
+            if len(ids) > 1:
+                raise ValueError(f'Only Chapters {[chap for chap in self.chapters if chap.id is None]} have no ID')
+            else:
+                for i, chap in enumerate(self.chapters):
+                    chap.id = i
         with open(file_path, 'w') as fobj:
-            if self.preface:
-                fobj.write(preface_format.format(book=self) + "\n\n")
+            fobj.write(preface_format.format(book=self) + "\n\n")
             for chapter in self.chapters:
                 title = f"第{self.start_chapter + chapter.id}章 {chapter.title}"
                 L = len(chapter.content)
@@ -75,9 +103,19 @@ class Book(DataClassExtension):
                 fobj.write(chapter.content.strip())
                 fobj.write('\n\n\n')
 
+    def to_json(self, json_path):
+        with open(json_path, 'w') as f:
+            json.dump(self._asdict(), f)
+
+    def clean_chapter_id(self):
+        if len(self.chapters):
+            self.start_chapter = self.chapters[0].id
+            for chap in self.chapters:
+                chap.id -= self.start_chapter
+
     @staticmethod
-    def read_txt(file_path, name='', author=''):
-        book = Book(name=name, author=author)
+    def read_txt(file_path, parse_preface=_default_parse_preface):
+        book = Book()
         chapter = None
         with open(file_path, 'r') as fobj:
             for line in fobj:
@@ -93,12 +131,18 @@ class Book(DataClassExtension):
                     chapter.content += line
                 else:
                     book.preface += line
-        if chapter.title:
+        if chapter and chapter.title:
             book.chapters.append(chapter)
-        if len(book.chapters):
-            book.start_chapter = book.chapters[0].id
-            for chap in book.chapters:
-                chap.id -= book.start_chapter
+        book.clean_chapter_id()
+        parse_preface(book)
+        return book
+
+    @staticmethod
+    def read_json(json_path):
+        with open(json_path, 'r') as f:
+            book = Book(**json.load(f))
+        book.chapters = [Chapter(**chap) for chap in book.chapters]
+        book.clean_chapter_id()
         return book
 
     @staticmethod

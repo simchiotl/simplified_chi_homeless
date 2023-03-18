@@ -118,6 +118,11 @@ class CookieManager(metaclass=Registerable):
             json.dump(info, fobj, indent=2)
         return info
 
+    @staticmethod
+    def parse_cookie(cookie):
+        items = [tuple(map(str.strip, item.split('='))) for item in cookie.split(';')]
+        return {k: v for k, v in items}
+
 
 class Browser:
 
