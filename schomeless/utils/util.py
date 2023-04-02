@@ -4,6 +4,7 @@ import os.path
 import sys
 from dataclasses import dataclass
 from shutil import rmtree
+import cchardet
 from urllib.parse import urlparse, quote, parse_qs
 
 import requests
@@ -80,9 +81,10 @@ class RequestsTool:
             request_kwargs = {}
         res = requests.request(method, url, **request_kwargs)
         res.raise_for_status()
-        if res.apparent_encoding is not None and res.apparent_encoding.lower() != encoding.lower():
-            print(f"Maybe should be `{res.apparent_encoding}` encoding. Used it.", file=sys.stderr)
-            res.encoding = res.apparent_encoding
+        detected = cchardet.detect(res.content)
+        if detected['confidence'] > 0.8 and detected['encoding'].lower() != encoding.lower():
+            print(f"Maybe should be `{detected['encoding']}` encoding. Used it.", file=sys.stderr)
+            res.encoding = detected['encoding']
         else:
             res.encoding = encoding
         return res.text
