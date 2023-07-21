@@ -96,9 +96,9 @@ class JjwxcApi(RequestApi):
 
     @staticmethod
     def _parse_chapter_web(req, url, d):
-        block = d('div.noveltext')
+        block = d('div.novelbody:first > div')
         title = block('h2').text()
-        next_url = d('td.noveltitle').eq(2).find('a:last').attr('href')
+        next_url = d('.noveltitle').eq(1).find('a:last').attr('href')
         if req.is_vip:
             content = block('#show').next().text().strip()
             next_url = RequestsTool.get_host(url) + next_url
@@ -223,7 +223,7 @@ class JjwxcApi(RequestApi):
                                             request_kwargs=dict(headers=self.headers))
         items = res.get('chapterlist', [])
         return [JjwxcApi.ChapterRequest(True, int(item['novelid']), int(item['chapterid']), bool(item['isvip']),
-                                        item['chaptername']) for item in items]
+                                        item['chaptername']) for item in items if item['chaptertype'] == '0']
 
     def get_chapter_list(self, req):
         """
