@@ -1,13 +1,15 @@
 import os.path
+from collections import defaultdict
+from functools import reduce
 
 from schomeless.api import UrlChapterRequest, OtherApi
-from schomeless.schema import Chapter, Book
+from schomeless.schema import Chapter
 from schomeless.utils import RequestsTool
 
 __all__ = [
     'FeiazwApi',
     'ZwwxApi',
-    'Wx75Api'
+    'ShudaiziwxApi'
 ]
 
 BASE_DIR = os.path.dirname(__file__)
@@ -80,26 +82,37 @@ class ZwwxApi(OtherApi):
         return reqs
 
 
-class Wx75Api(OtherApi):
+class ShudaiziwxApi(OtherApi):
+
     @staticmethod
-    def clean_book(source, target, name='', author=''):
-        with open(source, 'r') as fobj:
-            text = fobj.read()
-            first, second = text.split("""-------------可爱的分割线---------------
-正文开始，更多好文请访问 75zw.com 
--------------可爱的分割线---------------""", maxsplit=1)
-            lines = second.strip().split('\n')
-            chapters = []
-            title, content = None, []
-            for line in lines:
-                cline = line.strip()
-                if cline.endswith('75zw.com'):
-                    if title is not None or len(content) > 0:
-                        chapters.append(Chapter(title, '\n'.join(content).strip()))
-                    title = cline.split(' ', maxsplit=1)[0]
-                    content = []
-                elif title is not None:
-                    content.append(cline)
-            preface = "\n".join(first.strip().split('\n')[3:])
-            book = Book(name=name, author=author, preface=preface, chapters=chapters)
-            book.to_txt(target)
+    def clean_title(t):
+        return t.split('章', maxsplit=1)[-1].strip()
+
+    def get_chapter_internal(self, req, d):
+        t = d('#content>h1').text()
+        ct = d('#content .content').text()
+        chap = Chapter(ShudaiziwxApi.clean_title(t), ct)
+        return chap
+
+    def get_next(self, req, d):
+        host = RequestsTool.get_host(req.url)
+        item = d('footer a.float-right')
+        category = d('footer a.float-left:last')
+        assert item.text().strip() == '下一页'
+        href = item.attr('href')
+        if href != category.attr('href'):
+            return UrlChapterRequest(True, host + href)
+        return None
+
+    def get_chapter_list_internal(self, req, d):
+        host = RequestsTool.get_host(req.url)
+        reqs = defaultdict(list)
+        req_list = []
+        for item in d('.booklist li.list-group-item a'):
+            url = host + item.attrib['href']
+            req = UrlChapterRequest(True, url, ShudaiziwxApi.clean_title(item.text))
+            reqs[req.title].append(len(req_list))
+            req_list.append(req)
+        # redundant = {k: v for k, v in reqs.items() if len(v) > 1}
+        removed = reduce(lambda prev, curr: prev | set(curr[:-1]), reqs.values(), set())
+        return [req for i, req in enumerate(req_list) if i not in removed]

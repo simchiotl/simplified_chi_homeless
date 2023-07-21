@@ -54,10 +54,10 @@ def add_fqnovel_cookies(cookie=None):
 @RequestApi.register(namespace)
 class FqNovelApi(RequestApi):
     CATALOGUE_WEB_API = "https://fanqienovel.com/page/{req.book_id}"
-    CATALOGUE_APP_API = "https://api5-normal-lf.fqnovel.com/reading/bookapi/directory/all_items/v/"
+    CATALOGUE_APP_API = "https://novel.snssdk.com/api/novel/book/directory/list/v1/"
     CHAPTER_WEB_API = "https://fanqienovel.com/reader/{req.item_id}"
     CHAPTER_APP_API = "https://novel.snssdk.com/api/novel/book/reader/full/v1/"
-    SEARCH_APP_API = 'https://novel.snssdk.com/api/novel/channel/homepage/search/search/v1/'
+    SEARCH_APP_API = 'http://novel.snssdk.com/api/novel/channel/homepage/search/search/v1/'
     ENCODING = 'utf-8'
 
     @dataclass
@@ -222,7 +222,7 @@ class FqNovelApi(RequestApi):
         res = RequestsTool.request_and_json(FqNovelApi.CATALOGUE_APP_API,
                                             encoding=FqNovelApi.ENCODING,
                                             request_kwargs=dict(headers=self.headers, params=params))
-        items = res['data'].get('item_data_list', [])
+        items = res['data'].get('item_list', [])
         return [FqNovelApi.ChapterRequest(
             True,
             int(item['item_id']),
@@ -261,8 +261,9 @@ class FqNovelApi(RequestApi):
                                             encoding=FqNovelApi.ENCODING,
                                             request_kwargs=dict(headers=self.headers, params=params))
         info = res['data']['book_info']
+        tags = ", ".join(map(lambda x: x['category_name'], info['category_tags']))
         return Book(
             name=info['book_name'],
             author=info['author'],
-            preface=f"{info['abstract']}\n\n{info['pure_category_tags']}"
+            preface=f"{info['abstract']}\n\n{tags}"
         )
