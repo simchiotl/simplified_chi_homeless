@@ -8,3 +8,4 @@ from .mtslash import *
 from .myrics import *
 from .other import *
 from .po import *
+from .qimao import *

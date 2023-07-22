@@ -1,12 +1,12 @@
+import hashlib
 import json
 import logging
 import os.path
-import sys
 from dataclasses import dataclass
 from shutil import rmtree
-import cchardet
 from urllib.parse import urlparse, quote, parse_qs
 
+import cchardet
 import requests
 from lxml import html
 from pyquery import PyQuery as pq
@@ -15,6 +15,7 @@ __all__ = [
     'LogTool',
     'RequestsTool',
     'FileSysTool',
+    'EncodingTool'
 ]
 
 
@@ -51,6 +52,8 @@ class LogTool:
 
 
 class RequestsTool:
+    logger = logging.getLogger('RequestTool')
+
     @staticmethod
     def quote(url, encoding='utf-8'):
         words = url.split('?', maxsplit=1)
@@ -75,15 +78,15 @@ class RequestsTool:
         base, _ = os.path.split(url)
         return base
 
-    @staticmethod
-    def request(url, *, encoding='utf-8', method='GET', request_kwargs=None):
+    @classmethod
+    def request(cls, url, *, encoding='utf-8', method='GET', request_kwargs=None):
         if request_kwargs is None:
             request_kwargs = {}
         res = requests.request(method, url, **request_kwargs)
         res.raise_for_status()
         detected = cchardet.detect(res.content)
         if detected['confidence'] > 0.8 and detected['encoding'].lower() != encoding.lower():
-            print(f"Maybe should be `{detected['encoding']}` encoding. Used it.", file=sys.stderr)
+            cls.logger.debug(f"Maybe should be `{detected['encoding']}` encoding. Used it.")
             res.encoding = detected['encoding']
         else:
             res.encoding = encoding
@@ -182,3 +185,16 @@ class FileSysTool:
             else:
                 if os.path.exists(path):
                     os.remove(path)
+
+
+class EncodingTool:
+    @staticmethod
+    def MD5(s, encode='utf-8'):
+        return hashlib.md5(s.encode(encode)).hexdigest()
+
+    @staticmethod
+    def from_hex(hexstr, decode=None):
+        b = bytes.fromhex(hexstr)
+        if decode != None:
+            return b.decode(decode)
+        return b

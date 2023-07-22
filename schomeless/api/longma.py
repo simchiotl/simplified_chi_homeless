@@ -138,7 +138,7 @@ class LongmaApi(RequestApi):
 
     def get_chapter(self, req):
         if not isinstance(req, LongmaApi.ChapterRequest):
-            req = LongmaApi._url_to_chapter_req(req.url)
+            req = LongmaApi._url_to_chapter_req(req)
         payload = self._page_request_payload(req)
         page = RequestsTool.request_and_pyquery(**payload)
         payload = self._content_request_payload(req, payload, page)
@@ -149,7 +149,7 @@ class LongmaApi(RequestApi):
 
     async def get_chapter_async(self, session, req):
         if not isinstance(req, LongmaApi.ChapterRequest):
-            req = LongmaApi._url_to_chapter_req(req.url)
+            req = LongmaApi._url_to_chapter_req(req)
         payload = self._page_request_payload(req)
         page = await RequestsTool.request_and_pyquery_async(session, **payload)
         payload = self._content_request_payload(req, payload, page)

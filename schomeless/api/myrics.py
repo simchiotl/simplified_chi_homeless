@@ -85,11 +85,11 @@ class MyRicsApi(RequestApi):
         return title.split('章', maxsplit=1)[-1].strip()
 
     @staticmethod
-    def _parse_request_from_chapter_url(url):
+    def _parse_from_url_request(req):
         try:
-            return MyRicsApi.ChapterRequest(True, int(url.split('/')[-1]))
+            return MyRicsApi.ChapterRequest(req.is_first, int(req.url.split('/')[-1]), req.title)
         except Exception as e:
-            raise ValueError(f'Invalid MY-RICS chapter URL: `{url}`')
+            raise ValueError(f'Invalid MY-RICS chapter URL: `{req.url}`')
 
     @staticmethod
     def _parse_chapter(req, text):
@@ -114,7 +114,7 @@ class MyRicsApi(RequestApi):
             2-tuple: ``(Chapter, MyRicsApi.ChapterRequest=None)``. If ``MyRicsApi.ChapterRequest`` is None, no next chapter.
         """
         if isinstance(req, UrlChapterRequest):
-            req = MyRicsApi._parse_request_from_chapter_url(req.url)
+            req = MyRicsApi._parse_from_url_request(req)
         text = RequestsTool.request(
             MyRicsApi.CHAPTER_WEB_API.format(req=req),
             encoding=MyRicsApi.WEB_ENCODING,
@@ -133,7 +133,7 @@ class MyRicsApi(RequestApi):
             2-tuple: ``(Chapter, MyRicsApi.ChapterRequest=None)``. If ``MyRicsApi.ChapterRequest`` is None, no next chapter.
         """
         if isinstance(req, UrlChapterRequest):
-            req = MyRicsApi._parse_request_from_chapter_url(req.url)
+            req = MyRicsApi._parse_from_url_request(req)
         text = await RequestsTool.request_async(
             session,
             MyRicsApi.CHAPTER_WEB_API.format(req=req),
@@ -144,7 +144,7 @@ class MyRicsApi(RequestApi):
 
     # ====================== Get chapter list ===========================
     @staticmethod
-    def _catalogue_url_to_request(req):
+    def _parse_from_url_catalogue_request(req):
         """
 
         Args:
@@ -194,6 +194,6 @@ class MyRicsApi(RequestApi):
             list[MyRicsApi.ChapterRequest]
         """
         if isinstance(req, UrlCatalogueRequest):
-            req = MyRicsApi._catalogue_url_to_request(req)
+            req = MyRicsApi._parse_from_url_catalogue_request(req)
         chapters = self.get_chapter_list_web(req)
         return chapters

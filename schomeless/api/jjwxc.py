@@ -58,7 +58,7 @@ class JjwxcApi(RequestApi):
     CATALOGUE_WEB_API = "https://www.jjwxc.net/onebook.php?novelid={req.novel_id}"
     CATALOGUE_APP_API = "https://app.jjwxc.net/androidapi/chapterList?novelId={req.novel_id}&more=0&whole=1"
     CHAPTER_WEB_API = "https://my.jjwxc.net/onebook{req.web_suffix}.php?novelid={req.novel_id}&chapterid={req.chapter_id}"
-    CHAPTER_APP_API = "https://app.jjwxc.net/androidapi/chapterContent?novelId={req.novel_id}&chapterId={req.chapter_id}"
+    CHAPTER_APP_API = "https://android.jjwxc.net/androidapi/androidChapterBatchDownload"
     WEB_ENCODING = 'gb18030'
     APP_ENCODING = 'ascii'
 
@@ -80,14 +80,21 @@ class JjwxcApi(RequestApi):
     def __init__(self):
         super().__init__()
         self.headers = {
-            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+            'Referer': 'http://android.jjwxc.net?v=290',
+            "user-agent": "Mozilla/5.0 (Linux; Android 10; TEL-AN10 Build/HONORTEL-AN10; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/88.0.4324.93 Mobile Safari/537.36/JINJIANG-Android/287(TEL-AN10;Scale/3.0);"
         }
         self.cookies = CookieManager.get_cookie(namespace.lower())
 
     @staticmethod
-    def _parse_request_from_chapter_url(url):
-        args = RequestsTool.parse_query(url)
-        return JjwxcApi.ChapterRequest(True, int(args['novelid']), int(args['chapterid']), 'vip' in url)
+    def _parse_from_url_request(req):
+        args = RequestsTool.parse_query(req.url)
+        return JjwxcApi.ChapterRequest(
+            req.is_first,
+            int(args['novelid']),
+            int(args['chapterid']),
+            'vip' in req.url,
+            req.title
+        )
 
     def _preprocess_chapter_web(self, req):
         assert not req.is_vip, VIP_ERROR_WEB
@@ -109,7 +116,7 @@ class JjwxcApi(RequestApi):
         if next_url.split('?')[-1] == url.split('?')[-1]:
             next = None
         else:
-            next = JjwxcApi._parse_request_from_chapter_url(next_url)
+            next = JjwxcApi._parse_from_url_request(UrlChapterRequest(True, next_url))
         return Chapter(title, content), next
 
     def get_chapter_web(self, req):
@@ -119,25 +126,36 @@ class JjwxcApi(RequestApi):
 
     def _preprocess_chapter_app(self, req):
         assert not req.is_vip or (self.cookies is not None and 'token' in self.cookies), VIP_ERROR_APP
-        url = JjwxcApi.CHAPTER_APP_API.format(req=req)
+        params = {
+            'novelId': req.novel_id,
+            'chapterIds': req.chapter_id,
+            'versionCode': 290,
+            'isProtect': 1,
+            'noteislock': 1,
+            'token': '6733620_502c08bc0d613c739bd8ef814d0f84b1'
+        }
         headers = self.headers
-        if req.is_vip:
-            headers = dict(cookie=self.cookies, **headers)
-        return url, headers
+        # if req.is_vip:
+        #     headers = dict(cookie=self.cookies, **headers)
+        return params, headers
 
     @staticmethod
-    def _parse_chapter_app(req, url, item):
+    def _parse_chapter_app(req, item):
         title = item['chapterName']
         content = '\n'.join([l.strip() for l in item['content'].split('\n')])
         next = JjwxcApi.ChapterRequest(req.is_first, req.novel_id, req.chapter_id + 1, req.is_vip)
         return Chapter(title, content), next
 
     def get_chapter_app(self, req):
-        url, headers = self._preprocess_chapter_app(req)
-        item = RequestsTool.request_and_json(url, JjwxcApi.APP_ENCODING, request_kwargs=dict(headers=headers))
+        params, headers = self._preprocess_chapter_app(req)
+        item = RequestsTool.request_and_json(
+            JjwxcApi.CHAPTER_APP_API,
+            JjwxcApi.APP_ENCODING,
+            request_kwargs=dict(headers=headers, params=params)
+        )
         if item.get('message', '') == '章节不存在':
             return None, None
-        return JjwxcApi._parse_chapter_app(req, url, item)
+        return JjwxcApi._parse_chapter_app(req, item)
 
     def get_chapter(self, req):
         """
@@ -149,7 +167,7 @@ class JjwxcApi(RequestApi):
             2-tuple: ``(Chapter, JjwxcApi.ChapterRequest=None)``. If ``JjwxcApi.ChapterRequest`` is None, no next chapter.
         """
         if isinstance(req, UrlChapterRequest):
-            req = JjwxcApi._parse_request_from_chapter_url(req.url)
+            req = JjwxcApi._parse_from_url_request(req)
         if req.is_vip:
             try:
                 return self.get_chapter_app(req)
@@ -180,7 +198,7 @@ class JjwxcApi(RequestApi):
             2-tuple: ``(Chapter, JjwxcApi.ChapterRequest=None)``. If ``JjwxcApi.ChapterRequest`` is None, no next chapter.
         """
         if isinstance(req, UrlChapterRequest):
-            req = JjwxcApi._parse_request_from_chapter_url(req.url)
+            req = JjwxcApi._parse_from_url_request(req)
         if req.is_vip:
             try:
                 return await self.get_chapter_app_async(session, req)
@@ -190,7 +208,7 @@ class JjwxcApi(RequestApi):
 
     # ====================== Get chapter list ===========================
     @staticmethod
-    def _catalogue_url_to_request(req):
+    def _parse_from_url_catalogue_request(req):
         """
 
         Args:
@@ -207,8 +225,7 @@ class JjwxcApi(RequestApi):
     def get_chapter_list_web(self, req):
         def get_item(item):
             url = item.attrib.get('href', item.attrib.get('rel'))
-            spec = JjwxcApi._parse_request_from_chapter_url(url)
-            spec.title = item.text.strip()
+            spec = JjwxcApi._parse_from_url_request(UrlChapterRequest(True, url, item.text.strip()))
             return spec
 
         catalogue = JjwxcApi.CATALOGUE_WEB_API.format(req=req)
@@ -235,7 +252,7 @@ class JjwxcApi(RequestApi):
             list[JjwxcApi.ChapterRequest]
         """
         if isinstance(req, UrlCatalogueRequest):
-            req = JjwxcApi._catalogue_url_to_request(req)
+            req = JjwxcApi._parse_from_url_catalogue_request(req)
         try:
             chapters = self.get_chapter_list_app(req)
         except Exception as e:

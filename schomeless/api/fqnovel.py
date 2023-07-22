@@ -115,9 +115,9 @@ class FqNovelApi(RequestApi):
         return raw.split('章', maxsplit=1)[-1].strip()
 
     @staticmethod
-    def _parse_request_from_chapter_url(url):
-        item_id = FqNovelApi._parse_last_int(url, 'reader/')
-        return FqNovelApi.ChapterRequest(True, item_id)
+    def _parse_from_url_request(req):
+        item_id = FqNovelApi._parse_last_int(req.url, 'reader/')
+        return FqNovelApi.ChapterRequest(req.is_first, item_id, req.title)
 
     def _preprocess_chapter_app(self, req):
         return {
@@ -156,7 +156,7 @@ class FqNovelApi(RequestApi):
             2-tuple: ``(Chapter, FqNovelApi.ChapterRequest=None)``. If ``FqNovelApi.ChapterRequest`` is None, no next chapter.
         """
         if isinstance(req, UrlChapterRequest):
-            req = FqNovelApi._parse_request_from_chapter_url(req.url)
+            req = FqNovelApi._parse_from_url_request(req)
         return self.get_chapter_app(req)
 
     async def get_chapter_app_async(self, session, req):
@@ -179,12 +179,12 @@ class FqNovelApi(RequestApi):
             2-tuple: ``(Chapter, FqNovelApi.ChapterRequest=None)``. If ``FqNovelApi.ChapterRequest`` is None, no next chapter.
         """
         if isinstance(req, UrlChapterRequest):
-            req = FqNovelApi._parse_request_from_chapter_url(req.url)
+            req = FqNovelApi._parse_from_url_request(req)
         return await self.get_chapter_app_async(session, req)
 
     # ====================== Get chapter list ===========================
     @staticmethod
-    def _catalogue_url_to_request(url):
+    def _parse_from_url_catalogue_request(req):
         """
 
         Args:
@@ -194,14 +194,14 @@ class FqNovelApi(RequestApi):
             FqNovelApi.CatalogueRequest
         """
         try:
-            return FqNovelApi.CatalogueRequest(book_id=FqNovelApi._parse_last_int(url, 'page/'))
+            return FqNovelApi.CatalogueRequest(book_id=FqNovelApi._parse_last_int(req.url, 'page/'))
         except Exception as e:
-            raise ValueError(f'Invalid FQNOVEL catalogue URL: `{url}`')
+            raise ValueError(f'Invalid FQNOVEL catalogue URL: `{req.url}`')
 
     def get_chapter_list_web(self, req):
         def get_item(item):
             url = 'https://fanqienovel.com' + item.attrib.get('href')
-            spec = FqNovelApi._parse_request_from_chapter_url(url)
+            spec = FqNovelApi._parse_from_url_request(UrlChapterRequest(True, url))
             spec.title = FqNovelApi._parse_title(item.text.strip())
             return spec
 
@@ -225,8 +225,7 @@ class FqNovelApi(RequestApi):
         items = res['data'].get('item_list', [])
         return [FqNovelApi.ChapterRequest(
             True,
-            int(item['item_id']),
-            FqNovelApi._parse_title(item['title'])
+            int(item)
         ) for item in items]
 
     def get_chapter_list(self, req):
@@ -239,7 +238,7 @@ class FqNovelApi(RequestApi):
             list[FqNovelApi.ChapterRequest]
         """
         if isinstance(req, UrlCatalogueRequest):
-            req = FqNovelApi._catalogue_url_to_request(req.url)
+            req = FqNovelApi._parse_from_url_catalogue_request(req)
         try:
             chapters = self.get_chapter_list_app(req)
         except Exception as e:
@@ -249,7 +248,7 @@ class FqNovelApi(RequestApi):
     # ====================== Get Book Info ===========================
     def get_book_info(self, req):
         if isinstance(req, (UrlBookInfoRequest, UrlCatalogueRequest)):
-            req = FqNovelApi.BookInfoRequest(FqNovelApi._catalogue_url_to_request(req.url).book_id)
+            req = FqNovelApi.BookInfoRequest(FqNovelApi._parse_from_url_catalogue_request(req).book_id)
         params = {
             'book_id': req.book_id,
             'aid': 1967,
