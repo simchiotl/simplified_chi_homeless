@@ -101,6 +101,15 @@ class CookieManager(metaclass=Registerable):
         return info
 
     @classmethod
+    def get_field(cls, name, path):
+        obj = cls.load_info(name)
+        for field in path:
+            obj = obj.get(field, {})
+            if not isinstance(obj, dict):
+                return obj
+        return obj
+
+    @classmethod
     def get_cookie(cls, name, relogin_settings=ReloginSettings.NONE):
         info = cls.load_info(name)
         cookies = info.get('cookies', None)

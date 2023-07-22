@@ -1,8 +1,11 @@
+import base64
 import logging
 import os.path
 from dataclasses import dataclass
 from typing import Optional
 
+from Crypto.Cipher import DES
+from Crypto.Util.Padding import unpad
 from selenium import webdriver
 from selenium.webdriver.support.wait import WebDriverWait
 
@@ -21,7 +24,8 @@ namespace = 'JJWXC'
 
 # CONSTANTS
 VIP_ERROR_WEB = "VIP chapters cannot be requested from Web API!"
-VIP_ERROR_APP = "VIP chapters require valid cookies! Use `CookieManager.set_cookie(\"jjwxc\")` to add cookies"
+VIP_ERROR_APP = "VIP chapters require valid token!"
+INTERNAL_ENCODING = 'utf-8'
 
 
 @CookieManager.register(namespace.lower())
@@ -58,7 +62,7 @@ class JjwxcApi(RequestApi):
     CATALOGUE_WEB_API = "https://www.jjwxc.net/onebook.php?novelid={req.novel_id}"
     CATALOGUE_APP_API = "https://app.jjwxc.net/androidapi/chapterList?novelId={req.novel_id}&more=0&whole=1"
     CHAPTER_WEB_API = "https://my.jjwxc.net/onebook{req.web_suffix}.php?novelid={req.novel_id}&chapterid={req.chapter_id}"
-    CHAPTER_APP_API = "https://android.jjwxc.net/androidapi/androidChapterBatchDownload"
+    CHAPTER_APP_API = "https://android.jjwxc.com/androidapi/androidChapterBatchDownload"
     WEB_ENCODING = 'gb18030'
     APP_ENCODING = 'ascii'
 
@@ -84,6 +88,7 @@ class JjwxcApi(RequestApi):
             "user-agent": "Mozilla/5.0 (Linux; Android 10; TEL-AN10 Build/HONORTEL-AN10; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/88.0.4324.93 Mobile Safari/537.36/JINJIANG-Android/287(TEL-AN10;Scale/3.0);"
         }
         self.cookies = CookieManager.get_cookie(namespace.lower())
+        self.token = CookieManager.get_field(namespace.lower(), ['token'])
 
     @staticmethod
     def _parse_from_url_request(req):
@@ -100,6 +105,14 @@ class JjwxcApi(RequestApi):
         assert not req.is_vip, VIP_ERROR_WEB
         url = JjwxcApi.CHAPTER_WEB_API.format(req=req)
         return url, self.headers
+
+    @staticmethod
+    def _decrypt(raw):
+        key = "KW8Dvm2N".encode(INTERNAL_ENCODING)
+        iv = "1ae2c94b".encode(INTERNAL_ENCODING)
+        des = DES.new(key, DES.MODE_CBC, iv)
+        decrypted = des.decrypt(base64.b64decode(raw.encode(INTERNAL_ENCODING)))
+        return unpad(decrypted, DES.block_size).decode('utf-8')
 
     @staticmethod
     def _parse_chapter_web(req, url, d):
@@ -125,37 +138,36 @@ class JjwxcApi(RequestApi):
         return JjwxcApi._parse_chapter_web(req, url, d)
 
     def _preprocess_chapter_app(self, req):
-        assert not req.is_vip or (self.cookies is not None and 'token' in self.cookies), VIP_ERROR_APP
+        assert not req.is_vip or (self.token and len(self.token.split('_')[-1]) == 32), VIP_ERROR_APP
         params = {
             'novelId': req.novel_id,
             'chapterIds': req.chapter_id,
-            'versionCode': 290,
-            'isProtect': 1,
-            'noteislock': 1,
-            'token': '6733620_502c08bc0d613c739bd8ef814d0f84b1'
+            'versionCode': 304,
+            'token': self.token
         }
-        headers = self.headers
-        # if req.is_vip:
-        #     headers = dict(cookie=self.cookies, **headers)
-        return params, headers
+        return params, self.headers
 
     @staticmethod
-    def _parse_chapter_app(req, item):
+    def _parse_chapter_app(req, res):
+        item = res['downloadContent'][0]
+        if item.get('message', '') == '章节不存在':
+            return None, None
         title = item['chapterName']
-        content = '\n'.join([l.strip() for l in item['content'].split('\n')])
+        content = item['content']
+        if 'content' in res['encryptField']:
+            content = JjwxcApi._decrypt(content)
+        content = '\n'.join([l.strip() for l in content.split('\n')])
         next = JjwxcApi.ChapterRequest(req.is_first, req.novel_id, req.chapter_id + 1, req.is_vip)
         return Chapter(title, content), next
 
     def get_chapter_app(self, req):
         params, headers = self._preprocess_chapter_app(req)
-        item = RequestsTool.request_and_json(
+        res = RequestsTool.request_and_json(
             JjwxcApi.CHAPTER_APP_API,
             JjwxcApi.APP_ENCODING,
             request_kwargs=dict(headers=headers, params=params)
         )
-        if item.get('message', '') == '章节不存在':
-            return None, None
-        return JjwxcApi._parse_chapter_app(req, item)
+        return JjwxcApi._parse_chapter_app(req, res)
 
     def get_chapter(self, req):
         """
@@ -185,7 +197,7 @@ class JjwxcApi(RequestApi):
         url, headers = self._preprocess_chapter_app(req)
         item = await RequestsTool.request_and_json_async(session, url, JjwxcApi.APP_ENCODING,
                                                          request_kwargs=dict(headers=headers))
-        return JjwxcApi._parse_chapter_app(req, url, item)
+        return JjwxcApi._parse_chapter_app(req, item)
 
     async def get_chapter_async(self, session, req):
         """

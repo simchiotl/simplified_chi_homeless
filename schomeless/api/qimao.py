@@ -3,12 +3,8 @@ import logging
 import os.path
 from dataclasses import dataclass
 from typing import Optional
-import cchardet
 
-import Crypto.Cipher.AES
-from pyquery import PyQuery
 from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
 
 from schomeless.api.base import RequestApi, UrlCatalogueRequest, UrlChapterRequest, CookieManager, UrlBookInfoRequest
 from schomeless.schema import Chapter, ChapterRequest, CatalogueRequest, BookInfoRequest, Book
