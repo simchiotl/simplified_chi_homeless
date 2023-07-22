@@ -53,10 +53,17 @@ def add_fqnovel_cookies(cookie=None):
 
 @RequestApi.register(namespace)
 class FqNovelApi(RequestApi):
+    """
+    Use the xposed module and start the web service to get the chapter content
+
+    References:
+        * xposed module: https://github.com/fengyuecanzhu/FQWeb/tree/master
+        * web service: https://telegra.ph/FQWeb-07-18
+    """
     CATALOGUE_WEB_API = "https://fanqienovel.com/page/{req.book_id}"
     CATALOGUE_APP_API = "https://novel.snssdk.com/api/novel/book/directory/list/v1/"
     CHAPTER_WEB_API = "https://fanqienovel.com/reader/{req.item_id}"
-    CHAPTER_APP_API = "https://novel.snssdk.com/api/novel/book/reader/full/v1/"
+    CHAPTER_APP_API = "http://localhost:{port}/content"
     SEARCH_APP_API = 'http://novel.snssdk.com/api/novel/channel/homepage/search/search/v1/'
     ENCODING = 'utf-8'
 
@@ -92,8 +99,9 @@ class FqNovelApi(RequestApi):
     class BookInfoRequest(BookInfoRequest):
         book_id: int
 
-    def __init__(self):
+    def __init__(self, web_service_port=9999):
         super().__init__()
+        self.port = web_service_port
         self.cookies = CookieManager.get_cookie(namespace.lower())
         self.headers = {
             "user-agent": "Mozilla/5.0 (Danger hiptop 3.4; U; AvantGo 3.2)",
@@ -121,30 +129,28 @@ class FqNovelApi(RequestApi):
 
     def _preprocess_chapter_app(self, req):
         return {
-            'group_id': req.item_id,
             'item_id': req.item_id,
-            'aid': 1997
         }
 
     @staticmethod
     def _parse_chapter_app(req, item):
-        if len(item['data']) == 0:
+        if int(item.get('code', '0')) != 0:
             return None, None
         d = PyQuery(item['data']['content'])
         next_item = item['data']['novel_data']['next_item_id']
-        title = FqNovelApi._parse_title(d('div.tt-title').text().strip())
-        content = d('article').text().strip()
+        title = FqNovelApi._parse_title(item['data']['title'])
+        content = d.html().strip()
         next = FqNovelApi.ChapterRequest(req.is_first, int(next_item)) if next_item else None
         return Chapter(title, content), next
 
     def get_chapter_app(self, req):
         item = RequestsTool.request_and_json(
-            FqNovelApi.CHAPTER_APP_API,
+            FqNovelApi.CHAPTER_APP_API.format(port=self.port),
             encoding=FqNovelApi.ENCODING,
             request_kwargs=dict(headers=self.headers,
                                 params=self._preprocess_chapter_app(req))
         )
-        return FqNovelApi._parse_chapter_app(req, item)
+        return FqNovelApi._parse_chapter_app(req, item['data'])
 
     def get_chapter(self, req):
         """
