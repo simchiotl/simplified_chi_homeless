@@ -1,3 +1,4 @@
+import json
 import logging
 import os.path
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ __all__ = [
 BASE_DIR = os.path.dirname(__file__)
 logger = logging.getLogger('API')
 namespace = 'FQNOVEL'
+WEB_SERVER_API = 'http://list.fqapi.jilulu.cn'
 
 
 @CookieManager.register(namespace.lower())
@@ -56,14 +58,19 @@ class FqNovelApi(RequestApi):
     """
     Use the xposed module and start the web service to get the chapter content
 
+    When using the emulator from Android Studio:
+    * open web server on FQWeb app on the emulator
+    * make sure ``adb`` is installed and forward the port to local machine.
+
     References:
         * xposed module: https://github.com/fengyuecanzhu/FQWeb/tree/master
         * web service: https://telegra.ph/FQWeb-07-18
+        * port forwarding: https://developer.android.com/tools/adb#forwardports
     """
     CATALOGUE_WEB_API = "https://fanqienovel.com/page/{req.book_id}"
-    CATALOGUE_APP_API = "https://novel.snssdk.com/api/novel/book/directory/list/v1/"
+    CATALOGUE_APP_API = f"{WEB_SERVER_API}/catalog"
     CHAPTER_WEB_API = "https://fanqienovel.com/reader/{req.item_id}"
-    CHAPTER_APP_API = "http://localhost:{port}/content"
+    CHAPTER_APP_API = f"{WEB_SERVER_API}/content"
     SEARCH_APP_API = 'http://novel.snssdk.com/api/novel/channel/homepage/search/search/v1/'
     ENCODING = 'utf-8'
 
@@ -136,16 +143,15 @@ class FqNovelApi(RequestApi):
     def _parse_chapter_app(req, item):
         if int(item.get('code', '0')) != 0:
             return None, None
-        d = PyQuery(item['data']['content'])
         next_item = item['data']['novel_data']['next_item_id']
         title = FqNovelApi._parse_title(item['data']['title'])
-        content = d.html().strip()
+        content = "\n".join(map(str.strip, item['data']['content'].split('\n')))
         next = FqNovelApi.ChapterRequest(req.is_first, int(next_item)) if next_item else None
         return Chapter(title, content), next
 
     def get_chapter_app(self, req):
         item = RequestsTool.request_and_json(
-            FqNovelApi.CHAPTER_APP_API.format(port=self.port),
+            FqNovelApi.CHAPTER_APP_API,
             encoding=FqNovelApi.ENCODING,
             request_kwargs=dict(headers=self.headers,
                                 params=self._preprocess_chapter_app(req))
@@ -172,7 +178,7 @@ class FqNovelApi(RequestApi):
             encoding=FqNovelApi.ENCODING,
             request_kwargs=dict(headers=self.headers,
                                 params=self._preprocess_chapter_app(req)))
-        return FqNovelApi._parse_chapter_app(req, item)
+        return FqNovelApi._parse_chapter_app(req, item['data'])
 
     async def get_chapter_async(self, session, req):
         """
@@ -220,18 +226,15 @@ class FqNovelApi(RequestApi):
     def get_chapter_list_app(self, req):
         params = {
             'book_id': req.book_id,
-            'aid': 1967,
-            'iid': 2665637677906061,
-            'app_name': 'novelapp',
-            'version_code': 495
         }
         res = RequestsTool.request_and_json(FqNovelApi.CATALOGUE_APP_API,
                                             encoding=FqNovelApi.ENCODING,
                                             request_kwargs=dict(headers=self.headers, params=params))
-        items = res['data'].get('item_list', [])
+        items = res['data']['data'].get('item_data_list', [])
         return [FqNovelApi.ChapterRequest(
             True,
-            int(item)
+            int(item['item_id']),
+            FqNovelApi._parse_title(item['title'])
         ) for item in items]
 
     def get_chapter_list(self, req):
@@ -265,8 +268,8 @@ class FqNovelApi(RequestApi):
         res = RequestsTool.request_and_json(FqNovelApi.CATALOGUE_APP_API,
                                             encoding=FqNovelApi.ENCODING,
                                             request_kwargs=dict(headers=self.headers, params=params))
-        info = res['data']['book_info']
-        tags = ", ".join(map(lambda x: x['category_name'], info['category_tags']))
+        info = res['data']['data']['book_info']
+        tags = ", ".join(map(lambda x: x['name'], json.loads(info['category_schema'])))
         return Book(
             name=info['book_name'],
             author=info['author'],
