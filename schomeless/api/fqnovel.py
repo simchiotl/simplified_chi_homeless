@@ -145,7 +145,10 @@ class FqNovelApi(RequestApi):
             return None, None
         next_item = item['data']['novel_data']['next_item_id']
         title = FqNovelApi._parse_title(item['data']['title'])
-        content = "\n".join(map(str.strip, item['data']['content'].split('\n')))
+        content = item['data']['content']
+        if "</p>" in content:
+            content = PyQuery(content).text()
+        content = "\n".join(map(str.strip, content.split('\n')))
         next = FqNovelApi.ChapterRequest(req.is_first, int(next_item)) if next_item else None
         return Chapter(title, content), next
 

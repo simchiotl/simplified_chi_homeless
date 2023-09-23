@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import List, Optional
 
-from schomeless.utils import DataClassExtension
+from schomeless.utils import DataClassExtension, EncodingTool
 
 __all__ = [
     'Book',
@@ -43,6 +43,8 @@ class Chapter(DataClassExtension):
             L = len(self.content)
             if L < MAYBE_ERROR_THRESHOLD:
                 logger.warning(f"Maybe invalid chapter:\nTitle: {self.title}, Content: {self.content}")
+            if not EncodingTool.is_contain_chinese(self.content):
+                logger.warning(f"Maybe encrypted chapter:\nTitle: {self.title}, Content: {self.content}")
             fobj.write(self.content.strip())
 
     @staticmethod

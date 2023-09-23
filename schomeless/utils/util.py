@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import os.path
+import re
 from dataclasses import dataclass
 from shutil import rmtree
 from urllib.parse import urlparse, quote, parse_qs
@@ -198,3 +199,9 @@ class EncodingTool:
         if decode != None:
             return b.decode(decode)
         return b
+
+    @staticmethod
+    def is_contain_chinese(word):
+        pattern = re.compile(r'[\u4e00-\u9fa5]')
+        match = pattern.search(word)
+        return True if match else False
