@@ -205,3 +205,11 @@ class EncodingTool:
         pattern = re.compile(r'[\u4e00-\u9fa5]')
         match = pattern.search(word)
         return True if match else False
+
+    @staticmethod
+    def change_encoding(file_path, from_encoding, to_encoding):
+        filedir, filename = os.path.split(file_path)
+        name, ext = os.path.splitext(filename)
+        new_path = os.path.join(filedir, f"{name}_{to_encoding}{ext}")
+        with open(file_path, 'r', encoding=from_encoding) as f, open(new_path, 'w', encoding=to_encoding) as w:
+            w.write(f.read())
