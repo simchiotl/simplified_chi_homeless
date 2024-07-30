@@ -80,7 +80,7 @@ class RequestsTool:
         return base
 
     @classmethod
-    def request(cls, url, *, encoding='utf-8', method='GET', request_kwargs=None):
+    def request(cls, url, *, encoding='utf-8', method='GET', request_kwargs=None, include_headers=False):
         if request_kwargs is None:
             request_kwargs = {}
         res = requests.request(method, url, **request_kwargs)
@@ -91,10 +91,13 @@ class RequestsTool:
             res.encoding = detected['encoding']
         else:
             res.encoding = encoding
+        if include_headers:
+            return res.text, res.headers
         return res.text
 
     @staticmethod
-    async def request_async(session, url, *, encoding='utf-8', method='GET', request_kwargs=None):
+    async def request_async(session, url, *, encoding='utf-8', method='GET', request_kwargs=None,
+                            include_headers=False):
         async def try_encodings_async(res):
             try:
                 return await res.text()
@@ -109,7 +112,10 @@ class RequestsTool:
         if request_kwargs is None:
             request_kwargs = {}
         async with session.request(method, url, **request_kwargs) as res:
-            return await try_encodings_async(res)
+            text = await try_encodings_async(res)
+            if include_headers:
+                return text, res.headers
+            return text
 
     @staticmethod
     def request_and_pyquery(url, encoding='utf-8', method='GET', request_kwargs=None):

@@ -1,4 +1,5 @@
 import base64
+import json
 import logging
 import os.path
 from dataclasses import dataclass
@@ -11,7 +12,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 
 from schomeless.api.base import RequestApi, UrlCatalogueRequest, UrlChapterRequest, CookieManager
 from schomeless.schema import Chapter, ChapterRequest, CatalogueRequest
-from schomeless.utils import RequestsTool
+from schomeless.utils import RequestsTool, EncodingTool
 
 __all__ = [
     'JjwxcApi',
@@ -26,6 +27,8 @@ namespace = 'JJWXC'
 VIP_ERROR_WEB = "VIP chapters cannot be requested from Web API!"
 VIP_ERROR_APP = "VIP chapters require valid token!"
 INTERNAL_ENCODING = 'utf-8'
+KEY_HARDCODE = "KW8Dvm2N"
+IV_HARDCODE = "1ae2c94b"
 
 
 @CookieManager.register(namespace.lower())
@@ -59,12 +62,14 @@ def add_jjwxc_cookies(cookie=None):
 
 @RequestApi.register(namespace)
 class JjwxcApi(RequestApi):
+    """Token MUST be get from Android app"""
     CATALOGUE_WEB_API = "https://www.jjwxc.net/onebook.php?novelid={req.novel_id}"
     CATALOGUE_APP_API = "https://app.jjwxc.net/androidapi/chapterList?novelId={req.novel_id}&more=0&whole=1"
     CHAPTER_WEB_API = "https://my.jjwxc.net/onebook{req.web_suffix}.php?novelid={req.novel_id}&chapterid={req.chapter_id}"
-    CHAPTER_APP_API = "https://android.jjwxc.com/androidapi/androidChapterBatchDownload"
+    CHAPTER_APP_API = "https://app.jjwxc.org/androidapi/chapterContent"
     WEB_ENCODING = 'gb18030'
     APP_ENCODING = 'ascii'
+    APP_VERSION = 379
 
     @dataclass
     class ChapterRequest(ChapterRequest):
@@ -84,8 +89,9 @@ class JjwxcApi(RequestApi):
     def __init__(self):
         super().__init__()
         self.headers = {
-            'Referer': 'http://android.jjwxc.net?v=290',
-            "user-agent": "Mozilla/5.0 (Linux; Android 10; TEL-AN10 Build/HONORTEL-AN10; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/88.0.4324.93 Mobile Safari/537.36/JINJIANG-Android/287(TEL-AN10;Scale/3.0);"
+            'Referer': f'http://android.jjwxc.net?v={JjwxcApi.APP_VERSION}',
+            "user-agent": "JINJIANG-iOS/5.6.5 (com.jieruitech1.JINGJIANG-iOS; build:570; iOS iPhone15,2 17.5.1 Alamofire/5.4.4"
+            # "user-agent": "Mozilla/5.0 (Linux; Android 14; iPA2375 Build/UP1A.231005.007; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/126.0.6478.134 Safari/537.36/JINJIANG-Android/379(iPA2375;Scale/2.5;isHarmonyOS/false)"
         }
         self.cookies = CookieManager.get_cookie(namespace.lower())
         self.token = CookieManager.get_field(namespace.lower(), ['token'])
@@ -107,12 +113,52 @@ class JjwxcApi(RequestApi):
         return url, self.headers
 
     @staticmethod
-    def _decrypt(raw):
-        key = "KW8Dvm2N".encode(INTERNAL_ENCODING)
-        iv = "1ae2c94b".encode(INTERNAL_ENCODING)
+    def _decrypt(raw, key=KEY_HARDCODE, iv=IV_HARDCODE):
+        key = key.encode(INTERNAL_ENCODING)
+        iv = iv.encode(INTERNAL_ENCODING)
         des = DES.new(key, DES.MODE_CBC, iv)
         decrypted = des.decrypt(base64.b64decode(raw.encode(INTERNAL_ENCODING)))
         return unpad(decrypted, DES.block_size).decode('utf-8')
+
+    @staticmethod
+    def _parse_key_from_headers(content, headers):
+        accesskey = headers.get('Accesskey')
+        keyString = headers.get('Keystring')
+        accesskeyLen = len(accesskey)
+        v9 = 0
+        v6 = str(ord(accesskey[accesskeyLen - 1]))
+
+        for i in range(accesskeyLen):
+            v9 += ord(accesskey[i])
+        v15 = v9 % len(keyString)
+
+        v17 = int(v9 / 65)
+        v18 = len(keyString)
+        if v17 + v15 > v18:
+            v43 = keyString[v15:(v18 - v15) + v15]
+        else:
+            v43 = keyString[v15:v17 + v15]
+
+        v32 = len(content)
+        dest = ''
+        if int(v6) & 1:
+            v38 = content[v32 - 12:v32]
+            dest = content[0:v32 - 12]
+
+        else:
+            v38 = content[0:12]
+            dest = content[12:len(content)]
+
+        key = EncodingTool.MD5(v43 + v38)[0:8]
+        iv = EncodingTool.MD5(v38)[0:8]
+        return key, iv, dest
+
+    @staticmethod
+    def _decrypt_content(text, headers=None):
+        key, iv, content = KEY_HARDCODE, IV_HARDCODE, text
+        if headers is not None:
+            key, iv, content = JjwxcApi._parse_key_from_headers(text, headers)
+        return JjwxcApi._decrypt(content, key, iv)
 
     @staticmethod
     def _parse_chapter_web(req, url, d):
@@ -141,20 +187,24 @@ class JjwxcApi(RequestApi):
         assert not req.is_vip or (self.token and len(self.token.split('_')[-1]) == 32), VIP_ERROR_APP
         params = {
             'novelId': req.novel_id,
-            'chapterIds': req.chapter_id,
-            'versionCode': 304,
+            'chapterId': req.chapter_id,
+            'versionCode': JjwxcApi.APP_VERSION,
             'token': self.token
         }
         return params, self.headers
 
     @staticmethod
-    def _parse_chapter_app(req, res):
-        item = res['downloadContent'][0]
-        if item.get('message', '') == '章节不存在':
+    def _parse_chapter_app(req, res, res_headers):
+        item = None
+        try:
+            item = json.loads(res)
+        except:
+            item = json.loads(JjwxcApi._decrypt_content(res, res_headers))
+        if item is None or item.get('message', '') == '章节不存在':
             return None, None
         title = item['chapterName']
         content = item['content']
-        if 'content' in res['encryptField']:
+        if 'content' in item['encryptField']:
             content = JjwxcApi._decrypt(content)
         content = '\n'.join([l.strip() for l in content.split('\n')])
         next = JjwxcApi.ChapterRequest(req.is_first, req.novel_id, req.chapter_id + 1, req.is_vip)
@@ -162,12 +212,13 @@ class JjwxcApi(RequestApi):
 
     def get_chapter_app(self, req):
         params, headers = self._preprocess_chapter_app(req)
-        res = RequestsTool.request_and_json(
+        res, res_headers = RequestsTool.request(
             JjwxcApi.CHAPTER_APP_API,
-            JjwxcApi.APP_ENCODING,
-            request_kwargs=dict(headers=headers, params=params)
+            encoding=JjwxcApi.APP_ENCODING,
+            request_kwargs=dict(headers=headers, params=params),
+            include_headers=True
         )
-        return JjwxcApi._parse_chapter_app(req, res)
+        return JjwxcApi._parse_chapter_app(req, res, res_headers)
 
     def get_chapter(self, req):
         """
@@ -194,10 +245,12 @@ class JjwxcApi(RequestApi):
         return self._parse_chapter_web(req, url, d)
 
     async def get_chapter_app_async(self, session, req):
-        url, headers = self._preprocess_chapter_app(req)
-        item = await RequestsTool.request_and_json_async(session, url, JjwxcApi.APP_ENCODING,
-                                                         request_kwargs=dict(headers=headers))
-        return JjwxcApi._parse_chapter_app(req, item)
+        params, headers = self._preprocess_chapter_app(req)
+        item, res_headers = await RequestsTool.request_async(session, JjwxcApi.CHAPTER_APP_API,
+                                                             encoding=JjwxcApi.APP_ENCODING,
+                                                             request_kwargs=dict(headers=headers, params=params),
+                                                             include_headers=True)
+        return JjwxcApi._parse_chapter_app(req, item, res_headers)
 
     async def get_chapter_async(self, session, req):
         """
